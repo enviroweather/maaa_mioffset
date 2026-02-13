@@ -49,28 +49,8 @@ from fod_config import SAVE_FOOTPRINT_FY, SAVE_FOOTPRINT_WS, SHAPE_SOURCE_FY, SH
 from fod_config import OUTPUT_LOCATION
 from fod_config import *
 
-import pylab
-
-
-#########################################################################	
-#
-#	Developed by:
-#
-#	Michael Kiefer
-#	Department of Geography, Environment, and Spatial Sciences
-#	Michigan State University
-#	Email: mtkiefer@msu.edu
-#	Phone: (USFS): (517) 884-8051
-#	      (Geography): (517) 432-4751
-#
-#	Last updated 10 July 2017
-#	+ Two changes to static polar plots:
-#		- Changed axes scaling to 80%
-#		- Replaced white background with transparent background
-#
-########################################################################
-
-
+# pylab does not appear to be used, maybe required for matplotlib output
+# import pylab
 
 latval = float(sys.argv[1])
 lonval = float(sys.argv[2])
