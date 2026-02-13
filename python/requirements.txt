@@ -1,0 +1,8 @@
+geopy
+h5py
+matplotlib
+numpy
+scipy
+pyshp
+simplekml
+windrose
