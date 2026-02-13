@@ -1,2 +1,6 @@
 .DS_Store
-/__pycache__
+python/__pycache__
+**/__pycache__
+
+.venv/
+
