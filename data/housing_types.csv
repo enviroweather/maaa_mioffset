@@ -1,0 +1,18 @@
+"species","animal_type", "housing_type", "oen_rate"
+"Cattle","Beef/Dairy", "Dirt/Concrete", 4
+"Cattle","Dairy", "Tie Stall, Scrape", 2
+"Swine","Gestation", "Deep Pit, Natural or Mech. Vent.", 50
+"Swine","Gestation", "Pull Plug, Natural or Mech. Vent.", 30
+"Swine","Farrowing", "Pull Plug, Natural or Mech. Vent.", 14
+"Swine","Finishing", "Deep Pit, Natural or Mech. Vent.", 34
+"Swine","Finishing", "Pull Plug, Natural or Mech. Vent.", 20
+"Swine","Finishing", "Hoop Barn, Deep Bedded, Scrape", 4
+"Poultry","Broiler", "Litter", 1
+"Poultry","Turkey", "Litter", 2
+"Cattle","Dairy", "Free Stall, Scrape", 6
+"Cattle","Dairy", Deep Pit Loose Housing, 6
+"Swine","Finishing", "Cargill (Open Front), Scrape", 11
+"Swine","Finishing", "Loose Housing, Scrape", 11
+"Swine","Finishing", "Open Concrete Lot, Scrape", 11
+"Swine","Nursery", "Deep Pit, Nat. or Mech. Vent.", 42
+"Swine","Nursery", "Pull Plug, Nat. or Mech. Vent.", 42
