@@ -2,9 +2,23 @@
 
 # python 2 
 # new_fod.py
-# MT Keifer, Michigan State University, 2017-2018
-# All code and in this repository is (c) 2026 MSU Trustees and their
-# authors and not to be distributed without express permission
+#########################################################################	
+#
+#	Developed by:
+#
+#	Michael Kiefer
+#	Department of Geography, Environment, and Spatial Sciences
+#	Michigan State University
+#	Email: mtkiefer@msu.edu
+#	Phone: (USFS): (517) 884-8051
+#	      (Geography): (517) 432-4751
+#
+#	Last updated 10 July 2017
+#	+ Two changes to static polar plots:
+#		- Changed axes scaling to 80%
+#		- Replaced white background with transparent background
+#
+########################################################################
 
 
 import numpy as np
@@ -39,22 +53,22 @@ import pylab
 
 
 #########################################################################	
-#							    		#
-#	Developed by:						  	#
-#							   		#
-#	Michael Kiefer					    		#
-#	Department of Geography, Environment, and Spatial Sciences	#
-#	Michigan State University				    	#
-#	Email: mtkiefer@msu.edu				    		#
-#	Phone: (USFS): (517) 884-8051				    	#
-#	      (Geography): (517) 432-4751			    	#
-#							    		#
-#	Last updated 10 July 2017					#
-#	+ Two changes to static polar plots:				#
-#		- Changed axes scaling to 80%				#
-#		- Replaced white background with transparent background	#
-#							    		#
-#########################################################################
+#
+#	Developed by:
+#
+#	Michael Kiefer
+#	Department of Geography, Environment, and Spatial Sciences
+#	Michigan State University
+#	Email: mtkiefer@msu.edu
+#	Phone: (USFS): (517) 884-8051
+#	      (Geography): (517) 432-4751
+#
+#	Last updated 10 July 2017
+#	+ Two changes to static polar plots:
+#		- Changed axes scaling to 80%
+#		- Replaced white background with transparent background
+#
+########################################################################
 
 
 
@@ -191,7 +205,7 @@ else:
 #>>>>>>>>>>>>>>>>>>>>>>>>>>CORE OF PROGRAM>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 #---------------------Extract at nearest grid point----------------------
-#
+
 
 
 
@@ -206,7 +220,7 @@ with h5py.File(NARR_INPUT,'r') as hf:
 	LAT = np.array(data)
 	data = hf.get('LON')
 	LON = np.array(data)
-	#
+
 
 #print "minimum latitude: ",np.min(np.min(LAT))
 #print "maximum latitude: ",np.max(np.max(LAT))
@@ -251,7 +265,7 @@ for topt in range(tfs,tfe+1):
 			WD=np.concatenate((WD,WD1),axis=1)
 
 	#------------------------------------------------------------------------
-	#
+
 	#-----------------------Wind direction processing------------------------
 
 	# Remove spikes in histogram at cardinal wind directions (90,180,270,360) 
@@ -276,10 +290,10 @@ for topt in range(tfs,tfe+1):
 			if((I[tr].astype(int)==1) & (c<=cap)):
 				i4[tr,m]=0
 				c=c+1	
-				#
+
 			#	
-		#
-	#
+
+
 	Isum=np.sum(i4,1)
 	I1=Isum>0
 	I2=I1.astype(int)
@@ -287,7 +301,7 @@ for topt in range(tfs,tfe+1):
 	WDds[I2==1]=-999
 
 	#------------------------------------------------------------------------
-	#
+
 	#--------Footprint preliminary step 1: compute "windstar chart"----------
 
 	# Proceeding clockwise around wind rose, determine frequency of 
@@ -313,11 +327,11 @@ for topt in range(tfs,tfe+1):
 		wc[d,3] = wc[d,2] + float((((PCs == 5) & (WSs > 3.1) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
 		wc[d,4] = wc[d,3] + float((((PCs == 4) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
 		wc[d,5] = wc[d,4] + float((((PCs == 4) & (WSs > 5.4) & (WSs <= 8.0)).sum()))/ float((WDds>=0).sum())*100
-		#
-	#
+
+
 
 	#------------------------------------------------------------------------
-	#
+
 	#------Footprint preliminary step 2: identify 1.5%,3%,5% classess--------
 
 	# Proceeding around the wind rose, identify the most
@@ -328,7 +342,7 @@ for topt in range(tfs,tfe+1):
 	# The "np.min" step ensures if two classes round to same frequency, e.g., 1.50%,
 	# we pick the more stable class (conservative approach - better to
 	# overestimate setback distance than underestimate it).
-	#
+
 	# Also, expand to 80 bins for display 
 	# purposes (as in original MI footprint). "+1" corrects for python 
 	# arrays starting at 0.
@@ -420,11 +434,11 @@ for topt in range(tfs,tfe+1):
 			f[32:37,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
 			f[32:37,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
 			f[32:37,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-		#
+
 
 	#	
 	#------------------------------------------------------------------------
-	#
+
 	#-------Footprint preliminary step 3: compute setback distance (D)-------
 
 	# Formula that follows, D = aE^b, along with empirical coefficients
@@ -456,8 +470,8 @@ for topt in range(tfs,tfe+1):
 				D[d,p]=0.0175*math.pow(E,0.5827) # Class 5
 			elif (f[d,p] == 6):
 				D[d,p]=0.0101*math.pow(E,0.6264) # Class 6   
-			#
-		#
+
+
 	# Special version of D array, with three "N" rows at top of table and other 
 	# two "N" rows at bottom of table.  This is done in order to match how it 
 	# is presented in existing MI Odor Print excel spreadsheet.
