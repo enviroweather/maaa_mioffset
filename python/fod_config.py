@@ -34,9 +34,9 @@ SHAPE_FOOTPRINT_FY = '/home/web-ewx/webdir/legacy/mioffset/tmp/shp_footprint_FY'
 
 SHAPE_FOOTPRINT_WS = '/home/web-ewx/webdir/legacy/mioffset/tmp/shp_footprint_WS' 
 
-OUTPUT_LOCATION = './output
+OUTPUT_LOCATION = '../output
 
-OUTPUT_OFFSET_DIR = './tmp/'   # This is needed for creating the zip file; It is relative to the executable 
+OUTPUT_OFFSET_DIR = '../tmp/'   # This is needed for creating the zip file; It is relative to the executable 
 
   
 # program paramaters defaults/testing?  unknown
