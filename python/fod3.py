@@ -42,11 +42,13 @@ from geopy.geocoders import googlev3
 import scipy.io as sio
 import simplekml
 import shapefile
-import fod_config
-from fod_config import TIME_FLAG, INPUT_FILE, NARR_INPUT, NARR_INPUT_LOC, OUT_IMG_WS, OUT_IMG_FY, OUT_IMG_3_1_WS, OUT_IMG_3_1_FY, SETBACK_FY, SETBACK_WS, PLACE_MARK
-from fod_config import SAVE_FOOTPRINT_FY, SAVE_FOOTPRINT_WS, SHAPE_SOURCE_FY, SHAPE_SOURCE_WS, SHAPE_FOOTPRINT_FY, SHAPE_FOOTPRINT_WS, NARR_DATA_FOLDER, RM_OUTPUT_FILES
+
+from fod_config import TIME_FLAG, NARR_INPUT, NARR_INPUT_LOC, OUT_IMG_WS, OUT_IMG_FY, OUT_IMG_3_1_WS, OUT_IMG_3_1_FY, SETBACK_FY, SETBACK_WS, PLACE_MARK
+from fod_config import SAVE_FOOTPRINT_FY, SAVE_FOOTPRINT_WS, SHAPE_SOURCE_FY, SHAPE_SOURCE_WS, SHAPE_FOOTPRINT_FY, SHAPE_FOOTPRINT_WS,  RM_OUTPUT_FILES
 from fod_config import OUTPUT_LOCATION
-from fod_config import *
+
+# unused constants in fod_config
+from fod_config import INPUT_FILE, NARR_DATA_FOLDER
 
 # pylab does not appear to be used, maybe required for matplotlib output
 # import pylab
