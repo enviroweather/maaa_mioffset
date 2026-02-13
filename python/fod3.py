@@ -67,7 +67,7 @@ now = time.time()
 #cutoff = now - 86400
 cutoff = now - 60
 
-folder = RM_OUTPUT_FILES
+# folder = RM_OUTPUT_FILES
 #------------------------------------------------------------------------
 
 #--------------------------Variable definitions--------------------------
