@@ -1,8 +1,23 @@
 #!/usr/bin/env python3
 
-# new_fod converted to Python 3 (minimal changes)
-# MT Keifer, Michigan State University, 2017-2018
-# Converted by assistant 2026
+# fod3.py python3 version of new_fod.py
+#########################################################################	
+#
+#	Developed by:
+#
+#	Michael Kiefer, 
+#   Department of Geography, Environment, and Spatial Sciences
+#	Michigan State University
+#
+#	updates 
+#   13 Feb 2026 update to python 3
+#   10 July 2017
+#	+ Two changes to static polar plots:
+#		- Changed axes scaling to 80%
+#		- Replaced white background with transparent background
+#
+#
+########################################################################
 
 
 import numpy as np
@@ -33,27 +48,8 @@ from fod_config import SAVE_FOOTPRINT_FY, SAVE_FOOTPRINT_WS, SHAPE_SOURCE_FY, SH
 from fod_config import OUTPUT_LOCATION
 from fod_config import *
 
-import pylab
-
-
-#########################################################################	
-#				    	#
-#	Developed by:					#
-#					#
-#	Michael Kiefer					#
-#	Department of Geography, Environment, and Spatial Sciences	#
-#	Michigan State University				#
-#	Email: mtkiefer@msu.edu				#
-#	Phone: (USFS): (517) 884-8051			#
-#	      (Geography): (517) 432-4751		#
-#					#
-#	Last updated 10 July 2017			#
-#	+ Two changes to static polar plots:		#
-#		- Changed axes scaling to 80%		#
-#		- Replaced white background with transparent background	#
-#					#
-#########################################################################
-
+# pylab does not appear to be used, maybe required for matplotlib output
+# import pylab
 
 latval = float(sys.argv[1])
 lonval = float(sys.argv[2])
@@ -64,7 +60,7 @@ time_stamp = sys.argv[4]
 start = time.time()
 
 #------------------------Remove old output files-------------------------
-#
+
 now = time.time()
 #cutoff = now - 86400
 cutoff = now - 60
