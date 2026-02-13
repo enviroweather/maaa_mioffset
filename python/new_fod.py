@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
-# python 2 
-# new_fod.py
+
+# new_fod.py python 2 
 #########################################################################	
 #
 #	Developed by:
