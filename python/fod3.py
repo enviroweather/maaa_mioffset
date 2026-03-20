@@ -58,14 +58,15 @@ lonval = float(sys.argv[2])
 odor_index = float(sys.argv[3])
 time_stamp = sys.argv[4]
 
+### this is no longer used
 #Begin timer.
-start = time.time()
+# start = time.time()
 
-#------------------------Remove old output files-------------------------
+# #------------------------Remove old output files-------------------------
 
-now = time.time()
-#cutoff = now - 86400
-cutoff = now - 60
+# now = time.time()
+# #cutoff = now - 86400
+# cutoff = now - 60
 
 # folder = RM_OUTPUT_FILES
 #------------------------------------------------------------------------
