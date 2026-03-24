@@ -8,13 +8,7 @@ odor_index=10
 # from datetime import datetime
 # time_stamp = datetime.now().strftime("%H:%M:%S.%f")
 # linux 
-if [[ "$(uname)" == "Darwin" ]]; then
-    time_stamp=$(date '+%H:%M:%S.%N')
-else
-    time_stamp=$(date '+%H:%M:%S.%f')
-fi
-# time_stamp = $(date '+%H:%M:%S.%f')
-# macOS/BSD: date '+%H:%M:%S.%N'
+time_stamp=$(date '+%H:%M:%S.%N')
 echo "latval : $latval"
 echo "lonval : $lonval"
 echo "odor_index : $odor_index"
