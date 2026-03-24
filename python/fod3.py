@@ -150,9 +150,12 @@ for topt in range(tfs,tfe+1):
 			WS=WS1
 			WD=WD1
 		else:
-			PC=np.concatenate((PC,PC1),axis=1)
-			WS=np.concatenate((WS,WS1),axis=1)
-			WD=np.concatenate((WD,WD1),axis=1)
+            # py2 to 3 conversion: 
+            # it was axis=1 in original script but that doesn't work on 1-d arrays
+            # axis=0 combines row-wise for 1-d array, which following code uses
+			PC=np.concatenate((PC,PC1),axis=0)
+			WS=np.concatenate((WS,WS1),axis=0)
+			WD=np.concatenate((WD,WD1),axis=0)
 
 	#------------------------------------------------------------------------
 	#	#-----------------------Wind direction processing------------------------
