@@ -14,6 +14,7 @@
 #   March 2026
 #     - removed imports and code that is no longer used
 #     - np types (np.float) are deprecated
+#     - replacement for deprecated distance method
 #   10 July 2017
 #	+ Two changes to static polar plots:
 #		- Changed axes scaling to 80%
@@ -46,7 +47,9 @@ import time
 import zipfile
 import matplotlib.cm as cm
 from geopy import Point
-from geopy.distance import vincenty
+# vincenty method is deprecated, use geodesic method instead, but keep vincenty name for consistency with existing code
+# from geopy.distance import vincenty
+from geopy.distance import geodesic as vincenty
 import scipy.io as sio
 import simplekml
 import shapefile
