@@ -13,6 +13,7 @@
 #   13 Feb 2026 update to python 3
 #   March 2026
 #     - removed imports and code that is no longer used
+#     - np types (np.float) are deprecated
 #   10 July 2017
 #	+ Two changes to static polar plots:
 #		- Changed axes scaling to 80%
@@ -155,7 +156,7 @@ for topt in range(tfs,tfe+1):
 
 	indx=np.random.RandomState(seed=8675309).permutation(WD.size)
 	wd4=[90,180,270,360]
-	i4=np.zeros((WD.size,4), dtype=np.int, order='F')
+	i4=np.zeros((WD.size,4), dtype=int, order='F')
 	h,x = np.histogram(WD,bins=np.arange(0,361,1))
 	for m in range(0,4):
 		if(m<3):
@@ -182,7 +183,7 @@ for topt in range(tfs,tfe+1):
 	#--------Footprint preliminary step 1: compute "windstar chart"----------
 
 	dbin=np.arange(11.25,360,22.5)
-	wc = np.zeros((16,6), dtype=np.float, order='F')
+	wc = np.zeros((16,6), dtype=float, order='F')
 	for d in range(0,dbin.size):
 		if (d == 0):									
 			PCs = PC[(WDds >= dbin[15]) | ((WDds < dbin[0]) & (WDds >= 0))]
@@ -201,7 +202,7 @@ for topt in range(tfs,tfe+1):
 
 	#------Footprint preliminary step 2: identify 1.5%,3%,5% classess--------
 
-	f = np.zeros((5*dbin.size,3), dtype=np.int, order='F')
+	f = np.zeros((5*dbin.size,3), dtype=int, order='F')
 	for d in range (0,dbin.size):
 		tem=np.round(wc[d,:],2)
 		if(d==0):
@@ -277,7 +278,7 @@ for topt in range(tfs,tfe+1):
 	#-------Footprint preliminary step 3: compute setback distance (D)-------
 
 	E = odor_index
-	D = np.zeros((5*dbin.size,3), dtype=np.float, order='F')
+	D = np.zeros((5*dbin.size,3), dtype=float, order='F')
 	for d in range (0,5*dbin.size):
 		for p in range (0,3):
 			if (f[d,p] == 1):
@@ -450,7 +451,7 @@ for topt in range(tfs,tfe+1):
 
 	#-----------Generate KML file with footprints drawn as polygons----------
 
-	LL=np.empty((81,3,2), dtype=np.float, order='F')
+	LL=np.empty((81,3,2), dtype=float, order='F')
 	for d in range(0,dbin.size):
 		for p in range(0,3):
 			LL[d,p,1]=vincenty(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).latitude
