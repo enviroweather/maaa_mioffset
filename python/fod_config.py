@@ -1,10 +1,11 @@
 
-
+# FOD config for running on current HPCC arrangement
 #######
-# HDF5 input data files 
-NARR_INPUT = "/data/mtkiefer/ODOR/NARR_DATA/narr_latlon.h5" 
-
-NARR_INPUT_LOC = "/data/mtkiefer/ODOR/NARR_DATA/narr_PSD_" 
+# HDF5 input data files
+# relative to this py 
+BASE_DIR = "/mnt/research/ICER-RSE/clients/enviroweather/mioffset"
+NARR_INPUT = BASE_DIR + "/h5/narr_latlon.h5" 
+NARR_INPUT_LOC = BASE_DIR + "/h5/narr_PSD_" 
 
 
 ####
@@ -51,11 +52,13 @@ PLACE_MARK = 'http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png'
 # unused
 # ?
 INPUT_FILE = "/home/web-ewx/webdir/legacy/mioffset/footprint_input.txt" 
-# the NARR files are explicitly named in the fod3.py code, 
-NARR_DATA_FOLDER = "/data/mtkiefer/ODOR/NARR_DATA/" 
+# the NARR files are explicitly named in the fod3.py code, so this is not used
+# however, setting it for this config
+# NARR_DATA_FOLDER = BASE_DIR + "/h5/" 
+
 # this _was_ used to identify the folder where old files were to be deleted
 # but the code to delete the existing files is commented out
-RM_OUTPUT_FILES = "/home/web-ewx/webdir/legacy/mioffset/tmp" 
+# RM_OUTPUT_FILES = "/home/web-ewx/webdir/legacy/mioffset/tmp" 
 
 ########
 # program paramaters defaults/testing?  unknown
@@ -67,3 +70,4 @@ SOURCE_1 = "1,100000,6,0.1"
 SOURCE_2 = "2,100000,42,0.5"
 SOURCE_3 = "3,5000,28,0.5"
 TIME_FLAG = 'F' 
+
