@@ -64,7 +64,7 @@ from fod_config import *
 latval = float(sys.argv[1])
 lonval = float(sys.argv[2])
 odor_index = float(sys.argv[3])
-time_stamp = sys.argv[4]
+time_stamp = 'test_' #sys.argv[4]
 
 ### this is no longer used
 #Begin timer.
@@ -498,7 +498,8 @@ for topt in range(tfs,tfe+1):
         kml.save(SAVE_FOOTPRINT_WS)
 
     #----------Create ESRI shapefile (only output 5% footprint)--------------
-
+    # uses pyshp
+    # https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
     if(topt == 1):
         first_half, second_half = SHAPE_SOURCE_FY.rsplit('/',1)
         shapeFileName = first_half + "/" + time_stamp + "_" + second_half
@@ -513,7 +514,7 @@ for topt in range(tfs,tfe+1):
     w.record('Odor_source')
     w.close()
 
-
+    # polygon
     if(topt == 1):
         first_half, second_half = SHAPE_FOOTPRINT_FY.rsplit('/',1)
         shapeFileName = first_half + "/" + time_stamp + "_" + second_half        # w = shapefile.Writer(SHAPE_FOOTPRINT_FY, shapeType=shapefile.POLYGON)
@@ -523,13 +524,7 @@ for topt in range(tfs,tfe+1):
         
     w = shapefile.Writer(shapeFileName, shapeType=shapefile.POLYGON)    
     
-    ########################################################################
-    ## ERROR HERE 
-    ## https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
-    ## polygon needs to be a python list, not a numpy array
-    ########################################################################
-
-    w.poly(LL[:,0,:].tolist())
+    w.poly([LL[:,0,:].tolist()])
     w.field('Polygon')
     w.record('5%_footprint')
     w.close()
