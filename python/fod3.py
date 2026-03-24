@@ -126,7 +126,7 @@ or (lonval < np.min(np.min(LON))) or (lonval > np.max(np.max(LON)))):
 
 distance = (LAT-latval)**2 + (LON-lonval)**2
 idy, idx = np.where(distance==distance.min())
-idy=int(idy);idx=int(idx);
+idy=int(idy[0]);idx=int(idx[0]);
 
 for topt in range(tfs,tfe+1):
 	if(topt == 1):
