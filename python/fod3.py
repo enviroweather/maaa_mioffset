@@ -11,6 +11,8 @@
 #
 #	updates 
 #   13 Feb 2026 update to python 3
+#   March 2026
+#     - removed imports and code that is no longer used
 #   10 July 2017
 #	+ Two changes to static polar plots:
 #		- Changed axes scaling to 80%
@@ -22,36 +24,38 @@
 
 import numpy as np
 import math
-import glob 
+# not used!!
+# import glob 
+# pylab does not appear to be used, maybe required for matplotlib output
+# import pylab
+# not used!!
+# import shutil
+# not used!! 
+# from windrose import WindroseAxes
+# not used!! , done by calling program
+# from geopy.geocoders import googlev3
+
 import h5py
 import sys, os
-import shutil
 import matplotlib
 # matplotlib.use('Agg') is necessary when the script is called from a PHP application
 matplotlib.use('Agg')
-
 import matplotlib.pyplot as plt
-
 import time
 import zipfile
-from windrose import WindroseAxes
 import matplotlib.cm as cm
 from geopy import Point
 from geopy.distance import vincenty
-from geopy.geocoders import googlev3
 import scipy.io as sio
 import simplekml
 import shapefile
 
-from fod_config import TIME_FLAG, NARR_INPUT, NARR_INPUT_LOC, OUT_IMG_WS, OUT_IMG_FY, OUT_IMG_3_1_WS, OUT_IMG_3_1_FY, SETBACK_FY, SETBACK_WS, PLACE_MARK
-from fod_config import SAVE_FOOTPRINT_FY, SAVE_FOOTPRINT_WS, SHAPE_SOURCE_FY, SHAPE_SOURCE_WS, SHAPE_FOOTPRINT_FY, SHAPE_FOOTPRINT_WS,  RM_OUTPUT_FILES
-from fod_config import OUTPUT_LOCATION
+# just read in all config, it's our file
+# TODO, after script is working, convert explicit import 
+from fod_config import *
 
-# unused constants in fod_config
-from fod_config import INPUT_FILE, NARR_DATA_FOLDER
-
-# pylab does not appear to be used, maybe required for matplotlib output
-# import pylab
+### get input from command line, 
+# move to main program
 
 latval = float(sys.argv[1])
 lonval = float(sys.argv[2])
@@ -62,6 +66,8 @@ time_stamp = sys.argv[4]
 #Begin timer.
 # start = time.time()
 
+
+### no longer used
 # #------------------------Remove old output files-------------------------
 
 # now = time.time()
@@ -536,6 +542,6 @@ for topt in range(tfs,tfe+1):
 	shape_zip.close()
 
 #Stop timer.
-end = time.time()
+#end = time.time()
 
 #FIN
