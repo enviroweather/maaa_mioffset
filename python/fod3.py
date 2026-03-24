@@ -501,68 +501,40 @@ for topt in range(tfs,tfe+1):
 
     if(topt == 1):
         first_half, second_half = SHAPE_SOURCE_FY.rsplit('/',1)
-        SHAPE_SOURCE_FY = first_half + "/" + time_stamp + "_" + second_half
-        
-        w = shapefile.Writer(SHAPE_SOURCE_FY, shapeType=shapefile.POINT)
+        shapeFileName = first_half + "/" + time_stamp + "_" + second_half
+    
     elif(topt == 2):
         first_half, second_half = SHAPE_SOURCE_WS.rsplit('/',1)
-        SHAPE_SOURCE_WS = first_half + "/" + time_stamp + "_" + second_half
-        w = shapefile.Writer(SHAPE_SOURCE_FY, shapeType=shapefile.POINT)
-    
+        shapeFileName = first_half + "/" + time_stamp + "_" + second_half
+        
+    w = shapefile.Writer(shapeFileName, shapeType=shapefile.POINT)
     w.point(lonval,latval)
     w.field('Point')
     w.record('Odor_source')
     w.close()
- 
-    # if(topt == 1):
-    # 	first_half, second_half = SHAPE_SOURCE_FY.rsplit('/',1)
-    # 	SHAPE_SOURCE_FY = first_half + "/" + time_stamp + "_" + second_half
-    # 	w.save(SHAPE_SOURCE_FY)
-    # elif(topt == 2):
-    # 	first_half, second_half = SHAPE_SOURCE_WS.rsplit('/',1)
-    # 	SHAPE_SOURCE_WS = first_half + "/" + time_stamp + "_" + second_half
-    # 	w.save(SHAPE_SOURCE_WS)
-
-
 
 
     if(topt == 1):
         first_half, second_half = SHAPE_FOOTPRINT_FY.rsplit('/',1)
-        SHAPE_FOOTPRINT_FY = first_half + "/" + time_stamp + "_" + second_half
-        shapeFileName =  SHAPE_FOOTPRINT_FY
-        # w = shapefile.Writer(SHAPE_FOOTPRINT_FY, shapeType=shapefile.POLYGON)
+        shapeFileName = first_half + "/" + time_stamp + "_" + second_half        # w = shapefile.Writer(SHAPE_FOOTPRINT_FY, shapeType=shapefile.POLYGON)
     elif(topt == 2):
         first_half, second_half = SHAPE_FOOTPRINT_WS.rsplit('/',1)
-        SHAPE_FOOTPRINT_WS = first_half + "/" + time_stamp + "_" + second_half
-        shapeFileName =  SHAPE_FOOTPRINT_WS
-        # w = shapefile.Writer(SHAPE_FOOTPRINT_WS, shapeType=shapefile.POLYGON)
+        shapeFileName = first_half + "/" + time_stamp + "_" + second_half
         
     w = shapefile.Writer(shapeFileName, shapeType=shapefile.POLYGON)    
     
     ########################################################################
+    ## ERROR HERE 
+    ## https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
+    ## polygon needs to be a python list, not a numpy array
     ########################################################################
-    ########################################################################
-    ############ ERROR HERE 
-    ########################################################################
-    ########################################################################
-    ########################################################################
-    ########################################################################
-    # poly is not callable??  
-    # see https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
-    
-    w.poly(parts=[LL[:,0,:]])
+
+    w.poly(LL[:,0,:].tolist())
     w.field('Polygon')
     w.record('5%_footprint')
     w.close()
-    # if(topt == 1):
-    # 	first_half, second_half = SHAPE_FOOTPRINT_FY.rsplit('/',1)
-    # 	SHAPE_FOOTPRINT_FY = first_half + "/" + time_stamp + "_" + second_half
-    # 	w.save(SHAPE_FOOTPRINT_FY)
-    # elif(topt == 2):
-    # 	first_half, second_half = SHAPE_FOOTPRINT_WS.rsplit('/',1)
-    # 	SHAPE_FOOTPRINT_WS = first_half + "/" + time_stamp + "_" + second_half
-    # 	w.save(SHAPE_FOOTPRINT_WS)
 
+    
     zip_files = []
     tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_footprint_FY.shx'
     zip_files.append(tmpstr)
