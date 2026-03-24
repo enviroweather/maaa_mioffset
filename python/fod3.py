@@ -3,18 +3,22 @@
 # fod3.py python3 version of new_fod.py
 #########################################################################	
 #
-#	Developed by:
+#	Originally Developed by:
 #
-#	Michael Kiefer, 
+#	Dr. Michael Kiefer, 
 #   Department of Geography, Environment, and Spatial Sciences
-#	Michigan State University
+#	Michigan State University 
+#   Modified by 
 #
-#	updates 
-#   13 Feb 2026 update to python 3
-#   March 2026
-#     - removed imports and code that is no longer used
-#     - np types (np.float) are deprecated
-#     - replacement for deprecated distance method
+#	alterations for using in PHP application by Tracy Aichle
+#   
+#   March 2026: Python 3 untested by working version (Patrick Bills, MSU ICER)
+#     + various python 2 to 3 conversions
+#     + removed imports and code that is no longer used
+#     + np types (np.float) are deprecated
+#     + replacement for deprecated distance method
+#     + fixed several issues with numpy,pyshp, and file paths
+#     + removed unused comments and code 
 #   10 July 2017
 #	+ Two changes to static polar plots:
 #		- Changed axes scaling to 80%
@@ -24,19 +28,10 @@
 ########################################################################
 
 
+# #------------------------Imports-------------------------
+
 import numpy as np
 import math
-# not used!!
-# import glob 
-# pylab does not appear to be used, maybe required for matplotlib output
-# import pylab
-# not used!!
-# import shutil
-# not used!! 
-# from windrose import WindroseAxes
-# not used!! , done by calling program
-# from geopy.geocoders import googlev3
-
 import h5py
 import sys, os
 import matplotlib
@@ -53,6 +48,19 @@ from geopy.distance import geodesic as vincenty
 import scipy.io as sio
 import simplekml
 import shapefile
+
+# imports from previous version that are no longer used
+# import glob 
+# pylab does not appear to be used, maybe required for matplotlib output
+# import pylab
+# import shutil
+# matplot lib does all plotting
+# from windrose import WindroseAxes
+# geocoding is done by calling program
+# from geopy.geocoders import googlev3
+
+
+# #------------------------ Config -------------------------
 
 # just read in all config, it's our file
 # TODO, after script is working, convert explicit import 
@@ -555,8 +563,3 @@ for topt in range(tfs,tfe+1):
         shape_zip.write(zfile, arcname=tmp_loc_file, compress_type=zipfile.ZIP_DEFLATED)
 
     shape_zip.close()
-
-#Stop timer.
-#end = time.time()
-
-#FIN
