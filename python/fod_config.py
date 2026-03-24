@@ -11,6 +11,10 @@ NARR_INPUT_LOC = BASE_DIR + "/h5/narr_PSD_"
 ####
 # base location to store output files
 OUTPUT_OFFSET_DIR = '../tmp/'   # This is needed for creating the zip file; It is relative to the executable 
+# used to save shapefile zip only.  for now set it to be the same.  simplify this later 
+#
+OUTPUT_LOCATION = OUTPUT_OFFSET_DIR
+
 
 #####
 # files and folders used to save output from script 
@@ -39,9 +43,6 @@ SHAPE_FOOTPRINT_FY = OUTPUT_OFFSET_DIR + 'shp_footprint_FY'
 SHAPE_FOOTPRINT_WS = OUTPUT_OFFSET_DIR + 'shp_footprint_WS' 
 
 
-# used to save shapefile only, which are then zipped and 
-# store in maybe another location
-OUTPUT_LOCATION = '../output'
 
 #### 
 # url for map making

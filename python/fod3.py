@@ -544,9 +544,9 @@ for topt in range(tfs,tfe+1):
     tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_source_FY.dbf'
     zip_files.append(tmpstr)
 
-    tmp_file = './tmp/' + time_stamp+'_shape.zip'
+    zip_file =  OUTPUT_LOCATION + time_stamp+'_shape.zip'
 
-    shape_zip = zipfile.ZipFile(tmp_file, 'w')
+    shape_zip = zipfile.ZipFile(zip_file, 'w')
 
     tmp_str = []
     for zfile in zip_files:
