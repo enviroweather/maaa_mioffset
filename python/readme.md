@@ -77,7 +77,10 @@ The latest program is fod3.py, tested with Python 3.13
 
 **Command line params**
 
-`fod3.py  latval lonval odor_index time_stamp `
+```
+cd python  # this folder
+fod3.py  latval lonval odor_index time_stamp 
+```
 
 where
 
@@ -86,16 +89,28 @@ where
 - odor_index = value calculated using area of buildings etc. 
 - time_stamp = string to add unique value to file name
 
+There is a shell script with example values that can be run on linux or mac: 
+
+```
+cd python # this folder
+. ./fod_test.sh
+```
+
+
+
 ### Output
 
-Files are written to the folder specified in the `fod_config.py` file. 
+Files are written to the folder named in the variable `OUTPUT_OFFSET_DIR` 
+in `fod_config.py` 
+
 
  - PNG format plot
  - KML file for import into a GIS
  - ESRI Shapefile for import into a GIS, which includes several files
  - zip file with all the files needed for copying the shapefile
 
-These files are named with the timestamp to differentiate the runs. 
+These files are named with the timestamp to differentiate the runs, which must
+be sent as a command line parameter (see above)
 
 
 
