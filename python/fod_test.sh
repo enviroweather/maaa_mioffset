@@ -1,14 +1,14 @@
 #!/bin/bash
 
 echo "using python $(which python)"
-latval=43.14319
-lonval=-84.23689
+latval=43
+lonval=-84
 odor_index=10
 # python version of getting time stamp
 # from datetime import datetime
 # time_stamp = datetime.now().strftime("%H:%M:%S.%f")
 # linux 
-time_stamp="MIOFFSET_TEST_$(date '+%H_%M_%S_%N')"
+time_stamp="MIOFFSET_TEST_"   # "$(date '+%H_%M_%S_%N')"
 echo "latval : $latval"
 echo "lonval : $lonval"
 echo "odor_index : $odor_index"
