@@ -73,7 +73,7 @@ from fod_config import *
 latval = float(sys.argv[1])
 lonval = float(sys.argv[2])
 odor_index = float(sys.argv[3])
-time_stamp = 'test_' #sys.argv[4]
+time_stamp = sys.argv[4]
 
 ### this is no longer used
 #Begin timer.

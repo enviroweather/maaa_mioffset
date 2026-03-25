@@ -8,7 +8,7 @@ odor_index=10
 # from datetime import datetime
 # time_stamp = datetime.now().strftime("%H:%M:%S.%f")
 # linux 
-time_stamp=$(date '+%H:%M:%S.%N')
+time_stamp="MIOFFSET_TEST_$(date '+%H_%M_%S_%N')"
 echo "latval : $latval"
 echo "lonval : $lonval"
 echo "odor_index : $odor_index"
