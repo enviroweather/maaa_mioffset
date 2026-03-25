@@ -5,7 +5,7 @@
 #
 #	Originally Developed by:
 #
-#	Dr. Michael Kiefer, 
+#	Dr. Michael T. Kiefer, 
 #   Department of Geography, Environment, and Spatial Sciences
 #	Michigan State University 
 #   Modified by 
@@ -27,6 +27,7 @@
 #
 ########################################################################
 
+print("MIOFFSET DEVELOPMENT VERISON ONLY - NOT FOR PRODUCTION USE")
 
 # #------------------------Imports-------------------------
 
