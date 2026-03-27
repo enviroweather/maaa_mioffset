@@ -72,13 +72,78 @@ from fod_config import *
 #------------------------------------------------------------------------
 
 
-def fod(latval, lonval, odor_index,time_stamp):
+def read_narr_lat_lon( narr_file:str = NARR_INPUT):
+    """read in lat,lon for converting lat lon to climatology grid indices
 
-    #>>>>>>>>>>>>>>>>>>>>>>>>>I/O (SUBJECT TO CHANGE)>>>>>>>>>>>>>>>>>>>>>>>>
+    Args:
+        narr_file (str, optional): string full path to the NARR input file. 
+            Defaults to NARR_INPUT.
+    """
+    with h5py.File(narr_file,'r') as hf:
+        data = hf.get('LAT')
+        LAT = np.array(data)
+        data = hf.get('LON')
+        LON = np.array(data)
 
-    #------------------Read in information from input file.------------------
+    return(LAT, LON)
+        
 
-    time_flag = TIME_FLAG
+def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray) -> bool:
+    """determine latitude, longitude params are withing boundary
+
+    Args:
+        latval (float): latitude value
+        lonval (float): longitude value 
+        LAT (np.ndarray): latitude grid
+        LON (np.ndarray): longitude grid
+    """
+    
+    if((latval <np.min(np.min(LAT))) or ( latval > np.max(np.max(LAT))) \
+    or (lonval < np.min(np.min(LON))) or (lonval > np.max(np.max(LON)))):
+        return(False)
+    
+    return(True)
+
+
+def read_narr(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray, ts: int, te: int):
+    """get wind climatology for all years for point
+
+    Args:
+        latval (float): latitude value
+        lonval (float): longitude value
+        LAT (np.ndarray): latitude grid
+        LON (np.ndarray): longitude grid
+        ts (int): start time index
+        te (int): end time index
+    """
+    
+    distance:float = (LAT-latval)**2 + (LON-lonval)**2
+    idy, idx = np.where(distance==distance.min())
+    idy=int(idy[0]);idx=int(idx[0]);
+
+
+    for yr in range(1979,2009,1):
+        h5f = h5py.File(NARR_INPUT_LOC + str(yr) + '_BC.h5','r')
+        PC1 = h5f['PC'][idy,idx,ts:te]
+        WS1 = h5f['WS'][idy,idx,ts:te]
+        WD1 = h5f['WD'][idy,idx,ts:te]
+        if (yr == 1979):
+            PC=PC1
+            WS=WS1
+            WD=WD1
+        else:
+            # py2 to 3 conversion: 
+            # it was axis=1 in original script but that doesn't work on 1-d arrays
+            # axis=0 combines row-wise for 1-d array, which following code uses
+            PC=np.concatenate((PC,PC1),axis=0)
+            WS=np.concatenate((WS,WS1),axis=0)
+            WD=np.concatenate((WD,WD1),axis=0)
+                
+    return(PC, WS, WD)
+
+
+def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
+
     if(time_flag == 'F'):
         tfs=1;tfe=1 #Full year dataset: 1 Jan - 31 Dec; run program once.
     elif(time_flag == 'W'):
@@ -88,27 +153,6 @@ def fod(latval, lonval, odor_index,time_stamp):
     else:
         print('Incorrect time flag option, defaulting to full year')
         tfs=1;tfe=1				
-
-    #--------------Obtain latitude and longitude of the source--------------
-    # (location from command line args)
-    #------------------------------------------------------------------------
-
-
-    with h5py.File(NARR_INPUT,'r') as hf:
-        data = hf.get('LAT')
-        LAT = np.array(data)
-        data = hf.get('LON')
-        LON = np.array(data)
-
-    if((latval <np.min(np.min(LAT))) or ( latval > np.max(np.max(LAT))) \
-    or (lonval < np.min(np.min(LON))) or (lonval > np.max(np.max(LON)))):
-        print("Location outside the NARR domain.")
-        sys.exit()
-
-
-    distance = (LAT-latval)**2 + (LON-lonval)**2
-    idy, idx = np.where(distance==distance.min())
-    idy=int(idy[0]);idx=int(idx[0]);
 
     for topt in range(tfs,tfe+1):
         if(topt == 1):
@@ -122,25 +166,10 @@ def fod(latval, lonval, odor_index,time_stamp):
             # contains the same number of hours.
             ts=720
             te=2432
-        for yr in range(1979,2009,1):
-            h5f = h5py.File(NARR_INPUT_LOC + str(yr) + '_BC.h5','r')
-            PC1 = h5f['PC'][idy,idx,ts:te]
-            WS1 = h5f['WS'][idy,idx,ts:te]
-            WD1 = h5f['WD'][idy,idx,ts:te]
-            if (yr == 1979):
-                PC=PC1
-                WS=WS1
-                WD=WD1
-            else:
-                # py2 to 3 conversion: 
-                # it was axis=1 in original script but that doesn't work on 1-d arrays
-                # axis=0 combines row-wise for 1-d array, which following code uses
-                PC=np.concatenate((PC,PC1),axis=0)
-                WS=np.concatenate((WS,WS1),axis=0)
-                WD=np.concatenate((WD,WD1),axis=0)
-
-        #------------------------------------------------------------------------
-        #	#-----------------------Wind direction processing------------------------
+        
+        
+        PC, WS, WD = read_narr(latval, lonval, LAT, LON, ts, te)
+        #-----------------------Wind direction processing------------------------
 
         indx=np.random.RandomState(seed=8675309).permutation(WD.size)
         wd4=[90,180,270,360]
@@ -166,8 +195,6 @@ def fod(latval, lonval, odor_index,time_stamp):
         WDds=np.copy(WD)
         WDds[I2==1]=-999
 
-        #------------------------------------------------------------------------
-
         #--------Footprint preliminary step 1: compute "windstar chart"----------
 
         dbin=np.arange(11.25,360,22.5)
@@ -186,7 +213,6 @@ def fod(latval, lonval, odor_index,time_stamp):
             wc[d,4] = wc[d,3] + float((((PCs == 4) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
             wc[d,5] = wc[d,4] + float((((PCs == 4) & (WSs > 5.4) & (WSs <= 8.0)).sum()))/ float((WDds>=0).sum())*100
 
-        #------------------------------------------------------------------------
 
         #------Footprint preliminary step 2: identify 1.5%,3%,5% classess--------
 
@@ -261,7 +287,6 @@ def fod(latval, lonval, odor_index,time_stamp):
                 f[32:37,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
                 f[32:37,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
 
-        #	#------------------------------------------------------------------------
 
         #-------Footprint preliminary step 3: compute setback distance (D)-------
 
@@ -288,9 +313,6 @@ def fod(latval, lonval, odor_index,time_stamp):
         Dtbl[1:79,:]=D[0:78,:]
         Dtbl[0]=D[79,:]
 
-        #------------------------------------------------------------------------
-
-        #>>>>>>>>>>>>>>>>>>>>>>>I/O (SUBJECT TO CHANGE)>>>>>>>>>>>>>>>>>>>>>>>>>
 
         #------Plot footprint on polar axes with standard white background-------
 
@@ -408,7 +430,6 @@ def fod(latval, lonval, odor_index,time_stamp):
             plt.savefig(OUT_IMG_WS, format='png', dpi=300, transparent=True)
         plt.close()
 
-        #------------------------------------------------------------------------
 
         #---------Print formatted table to text file (later: json format)--------
 
@@ -436,8 +457,6 @@ def fod(latval, lonval, odor_index,time_stamp):
         mytab['col4'] = np.round(Dtbl[:,2],2)
         np.savetxt(f_handle, mytab, fmt="%6s %4.2f %4.2f %4.2f")
         f_handle.close()
-
-        #------------------------------------------------------------------------
 
         #-----------Generate KML file with footprints drawn as polygons----------
 
@@ -540,14 +559,17 @@ def fod(latval, lonval, odor_index,time_stamp):
         return(zip_file)
 
 
-def read_naar():
-    pass
-
 if __name__ == "__main__":
     latval = float(sys.argv[1])
     lonval = float(sys.argv[2])
     odor_index = float(sys.argv[3])
     time_stamp = sys.argv[4]
-    # validate here 
     
-    fod(latval, lonval, odor_index, time_stamp)
+    # validate here     
+    LAT, LON = read_narr_lat_lon(narr_file = NARR_INPUT)
+    
+    if not validate_latlon(latval, lonval, LAT, LON):
+        print("Location outside the NARR domain.")
+        sys.exit()
+
+    fod(latval, lonval, odor_index, time_stamp, LAT, LON)
