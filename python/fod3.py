@@ -52,7 +52,7 @@ import shapefile
 
 
 
-# #------------------------ Config -------------------------
+#------------------------ Config -------------------------
 
 # just read in all config, it's our file
 # TODO, after script is working, convert explicit import 
@@ -431,7 +431,7 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
         plt.close()
 
 
-        #---------Print formatted table to text file (later: json format)--------
+        #---------Print formatted table to text file--------
 
         if(topt == 1):
             first_half, second_half = SETBACK_FY.rsplit('/',1)
@@ -557,6 +557,8 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
 
         shape_zip.close()
         return(zip_file)
+
+    # end for loop 
 
 
 if __name__ == "__main__":
