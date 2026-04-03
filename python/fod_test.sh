@@ -16,10 +16,19 @@ echo "odor_index : $odor_index"
 echo "time_stamp : $time_stamp"
 python fod3.py  $latval  $lonval  $odor_index "$time_stamp"
 
+# let's compare file
+LEGACY_FOLDER=../../testing/legacy
+PY3_FOLDER=../../testing/py3
 # put output from tmp into a testing directory
-mkdir -p ../../testing/py3
-mv  ../tmp/${FILE_PREFIX}* ../../testing/py3/
-LEGACY_TABLE="../../testing/legacy/MIOFFSET_LEGACY_table_setbackdistance_FY.txt"
-PY3_TABLE="../../testing/py3/MIOFFSET_PY3_table_setbackdistance_FY.txt"
+mkdir -p $PY3_FOLDER
+mv  ../tmp/${FILE_PREFIX}* $PY3_FOLDER
+
 echo "Differences between LEGACY and PY3 table"
+LEGACY_TABLE="${LEGACY_FOLDER}/MIOFFSET_LEGACY_table_setbackdistance_FY.txt"
+PY3_TABLE="${PY3_FOLDER}/MIOFFSET_PY3_table_setbackdistance_FY.txt"
 git diff --no-index $LEGACY_TABLE $PY3_TABLE
+
+echo "Differences between KML files"
+LEGACY_KML="${LEGACY_FOLDER}/MIOFFSET_LEGACY_kml_footprint_FY.kml"
+PY3_KML="${PY3_FOLDER}/MIOFFSET_PY3_kml_footprint_FY.kml"
+git diff --no-index $LEGACY_KML $PY3_KML 
