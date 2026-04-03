@@ -319,6 +319,42 @@ def write_setback_text_table(text_file_name: str, D: np.ndarray):
     return(text_file_name)
     
 
+def save_kml(LL, E, latval, lonval, kml_file_name):
+    """create kml and save file from LL array 
+
+    Args:
+        LL (np array): set backs in lat/lon
+        latval (float): point source latitude
+        lonval (float): point source longitude
+        kml_file_name (str): full path to kml file to save
+    """
+    
+    kml = simplekml.Kml()
+    pnt=kml.newpoint(name="", coords=[(lonval,latval)])  # Source
+    pnt.name = 'E=' +str(E)
+    pnt.style.iconstyle.color = simplekml.Color.black
+    pnt.style.iconstyle.scale = 1 
+    pnt.style.iconstyle.icon.href = PLACE_MARK
+    pol=kml.newpolygon(name="1.5% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,2,:]))))
+    pol.style.linestyle.color = simplekml.Color.green
+    pol.style.linestyle.width = 10
+    pol.style.polystyle.outline = 1
+    pol.style.polystyle.fill = 0
+    pol.visibility=0
+    pol=kml.newpolygon(name="3% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,1,:]))))
+    pol.style.linestyle.color = simplekml.Color.blue
+    pol.style.linestyle.width = 10
+    pol.style.polystyle.outline = 1
+    pol.style.polystyle.fill = 0
+    pol.visibility=0
+    pol=kml.newpolygon(name="5% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,0,:]))))
+    pol.style.linestyle.color = simplekml.Color.red
+    pol.style.linestyle.width = 10
+    pol.style.polystyle.outline = 1
+    pol.style.polystyle.fill = 0
+            
+    kml.save(kml_file_name)  
+        
 def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR):
     
     if(time_flag == 'F'):
@@ -491,58 +527,35 @@ def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG,
         footprints_plot_file_path, five_percent_plot_file_path = save_footprint_plots(D=D, E=E, topt=topt, output_offset_dir=output_offset_dir, file_prefix=file_prefix)
 
 
-        #---------Print formatted table to text file--------
-        SETBACK_FY = output_offset_dir + 'table_setbackdistance_FY.txt' 
-        SETBACK_WS = output_offset_dir + 'table_setbackdistance_WS.txt' 
-        
-        if(topt == 1):
-            text_file_name = add_prefix_to_filename(SETBACK_FY, file_prefix)
+        #---------Print formatted table to text file--------        
+        if(topt == 1):            
+            text_file_name = 'table_setbackdistance_FY.txt'            
         elif(topt == 2):
-            text_file_name = add_prefix_to_filename(SETBACK_WS, file_prefix)
-
+            text_file_name = 'table_setbackdistance_WS.txt'         
+            
+        text_file_name = add_prefix_to_filename(
+            os.path.join(output_offset_dir, text_file_name), file_prefix)
+        
         write_setback_text_table(text_file_name=text_file_name, D=D)
 
-        #-----------Generate KML file with footprints drawn as polygons----------
-
-        LL=np.empty((81,3,2), dtype=float, order='F')
+        
+        # make a Lat/Lon array, used by both KML and shape file writers
+        LL=np.empty((81,3,2), dtype=float, order='F')        
         for d in range(0,dbin.size):
             for p in range(0,3):
                 LL[d,p,1]=vincenty(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).latitude
                 LL[d,p,0]=vincenty(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).longitude
         LL[80,:,:]=LL[0,:,:]
-        kml = simplekml.Kml()
-        pnt=kml.newpoint(name="", coords=[(lonval,latval)])  # Source
-        pnt.name = 'E=' +str(E)
-        pnt.style.iconstyle.color = simplekml.Color.black
-        pnt.style.iconstyle.scale = 1 
-        pnt.style.iconstyle.icon.href = PLACE_MARK
-        pol=kml.newpolygon(name="1.5% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,2,:]))))
-        pol.style.linestyle.color = simplekml.Color.green
-        pol.style.linestyle.width = 10
-        pol.style.polystyle.outline = 1
-        pol.style.polystyle.fill = 0
-        pol.visibility=0
-        pol=kml.newpolygon(name="3% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,1,:]))))
-        pol.style.linestyle.color = simplekml.Color.blue
-        pol.style.linestyle.width = 10
-        pol.style.polystyle.outline = 1
-        pol.style.polystyle.fill = 0
-        pol.visibility=0
-        pol=kml.newpolygon(name="5% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,0,:]))))
-        pol.style.linestyle.color = simplekml.Color.red
-        pol.style.linestyle.width = 10
-        pol.style.polystyle.outline = 1
-        pol.style.polystyle.fill = 0
         
-        SAVE_FOOTPRINT_FY = output_offset_dir + "kml_footprint_FY.kml" 
-        SAVE_FOOTPRINT_WS = output_offset_dir + "kml_footprint_WS.kml" 
         
+        #-----------Generate KML file with footprints drawn as polygons----------
         if(topt == 1):
-            SAVE_FOOTPRINT_FY = add_prefix_to_filename(SAVE_FOOTPRINT_FY, file_prefix)
-            kml.save(SAVE_FOOTPRINT_FY)
+            file_name = "kml_footprint_FY.kml"
         elif(topt == 2):
-            SAVE_FOOTPRINT_WS = add_prefix_to_filename(SAVE_FOOTPRINT_WS, file_prefix)
-            kml.save(SAVE_FOOTPRINT_WS)
+            file_name = "kml_footprint_WS.kml" 
+            
+        kml_file_name = add_prefix_to_filename(os.path.join(output_offset_dir, file_name), file_prefix)
+        save_kml(LL, E, latval, lonval, kml_file_name)
 
 
         #----------Create ESRI shapefile (only output 5% footprint)--------------
