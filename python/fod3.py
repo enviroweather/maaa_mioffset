@@ -27,7 +27,7 @@
 #
 ########################################################################
 
-print("MIOFFSET DEVELOPMENT VERISON ONLY - NOT FOR PRODUCTION USE")
+print("MIOFFSET DEVELOPMENT VERSION ONLY - NOT FOR PRODUCTION USE")
 
 # #------------------------Imports-------------------------
 
