@@ -17,30 +17,30 @@ OUTPUT_LOCATION = OUTPUT_OFFSET_DIR
 
 
 #####
-# files and folders used to save output from script 
-OUT_IMG_3_1_FY = OUTPUT_OFFSET_DIR + "image_footprint_3inone_FY.png" 
+# # files and folders used to save output from script 
+# OUT_IMG_3_1_FY = OUTPUT_OFFSET_DIR + "image_footprint_3inone_FY.png" 
 
-OUT_IMG_3_1_WS = OUTPUT_OFFSET_DIR + "image_footprint_3inone_WS.png" 
+# OUT_IMG_3_1_WS = OUTPUT_OFFSET_DIR + "image_footprint_3inone_WS.png" 
 
-OUT_IMG_FY = OUTPUT_OFFSET_DIR + "image_footprint_FY.png" 
+# OUT_IMG_FY = OUTPUT_OFFSET_DIR + "image_footprint_FY.png" 
 
-OUT_IMG_WS = OUTPUT_OFFSET_DIR + "image_footprint_WS.png" 
+# OUT_IMG_WS = OUTPUT_OFFSET_DIR + "image_footprint_WS.png" 
 
-SETBACK_FY = OUTPUT_OFFSET_DIR + 'table_setbackdistance_FY.txt' 
+# SETBACK_FY = OUTPUT_OFFSET_DIR + 'table_setbackdistance_FY.txt' 
 
-SETBACK_WS = OUTPUT_OFFSET_DIR + 'table_setbackdistance_WS.txt' 
+# SETBACK_WS = OUTPUT_OFFSET_DIR + 'table_setbackdistance_WS.txt' 
 
-SAVE_FOOTPRINT_FY = OUTPUT_OFFSET_DIR + "kml_footprint_FY.kml" 
+# SAVE_FOOTPRINT_FY = OUTPUT_OFFSET_DIR + "kml_footprint_FY.kml" 
 
-SAVE_FOOTPRINT_WS = OUTPUT_OFFSET_DIR + "kml_footprint_WS.kml" 
+# SAVE_FOOTPRINT_WS = OUTPUT_OFFSET_DIR + "kml_footprint_WS.kml" 
 
-SHAPE_SOURCE_FY = OUTPUT_OFFSET_DIR + 'shp_source_FY' 
+# SHAPE_SOURCE_FY = OUTPUT_OFFSET_DIR + 'shp_source_FY' 
 
-SHAPE_SOURCE_WS = OUTPUT_OFFSET_DIR + 'shp_source_WS' 
+# SHAPE_SOURCE_WS = OUTPUT_OFFSET_DIR + 'shp_source_WS' 
 
-SHAPE_FOOTPRINT_FY = OUTPUT_OFFSET_DIR + 'shp_footprint_FY' 
+# SHAPE_FOOTPRINT_FY = OUTPUT_OFFSET_DIR + 'shp_footprint_FY' 
 
-SHAPE_FOOTPRINT_WS = OUTPUT_OFFSET_DIR + 'shp_footprint_WS' 
+# SHAPE_FOOTPRINT_WS = OUTPUT_OFFSET_DIR + 'shp_footprint_WS' 
 
 
 

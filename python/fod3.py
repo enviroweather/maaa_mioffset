@@ -50,15 +50,20 @@ import scipy.io as sio
 import simplekml
 import shapefile
 
+DEBUG=os.getenv('DEBUG', True)
 
+
+def debug_print(x):
+    if DEBUG:
+        print(x)
+        
+        
 
 #------------------------ Config -------------------------
 
 # just read in all config, it's our file
 # TODO, after script is working, convert explicit import 
 from fod_config import *
-
-
 
 # note that these don't appear to be used in this 
 # but are perhaps used in the FE to calculate odor_index
@@ -142,8 +147,8 @@ def read_narr(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray, ts
     return(PC, WS, WD)
 
 
-def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
-
+def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR):
+    
     if(time_flag == 'F'):
         tfs=1;tfe=1 #Full year dataset: 1 Jan - 31 Dec; run program once.
     elif(time_flag == 'W'):
@@ -365,14 +370,19 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
         lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
         lg.draw_frame(False)
 
+
+        OUT_IMG_3_1_FY = output_offset_dir + "image_footprint_3inone_FY.png" 
+        OUT_IMG_3_1_WS = output_offset_dir + "image_footprint_3inone_WS.png" 
         if(topt == 1):
             first_half, second_half = OUT_IMG_3_1_FY.rsplit('/',1)
             OUT_IMG_3_1_FY = first_half + "/" + time_stamp + "_" + second_half
             plt.savefig(OUT_IMG_3_1_FY, format='png', dpi=300, transparent=True)
+            debug_print(f"saved {OUT_IMG_3_1_FY}")
         elif(topt == 2):
             first_half, second_half = OUT_IMG_3_1_WS.rsplit('/',1)
             OUT_IMG_3_1_WS = first_half + "/" + time_stamp + "_" + second_half
             plt.savefig(OUT_IMG_3_1_WS, format='png', dpi=300, transparent=True)
+            debug_print(f"saved {OUT_IMG_3_1_WS}")
         plt.close()
         
         #   2.   Second image: 5% footprint only.
@@ -420,6 +430,9 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
         lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
         lg.draw_frame(False)
 
+        
+        OUT_IMG_FY = output_offset_dir + "image_footprint_FY.png" 
+        OUT_IMG_WS = output_offset_dir + "image_footprint_WS.png" 
         if(topt == 1):
             first_half, second_half = OUT_IMG_FY.rsplit('/',1)
             OUT_IMG_FY = first_half + "/" + time_stamp + "_" + second_half
@@ -432,31 +445,34 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
 
 
         #---------Print formatted table to text file--------
-
+        SETBACK_FY = output_offset_dir + 'table_setbackdistance_FY.txt' 
+        SETBACK_WS = output_offset_dir + 'table_setbackdistance_WS.txt' 
         if(topt == 1):
             first_half, second_half = SETBACK_FY.rsplit('/',1)
-            SETBACK_FY = first_half + "/" + time_stamp + "_" + second_half
-            f_handle = open(SETBACK_FY, 'a')
+            text_file_name = first_half + "/" + time_stamp + "_" + second_half
+            # f_handle = open(SETBACK_FY, 'a')
         elif(topt == 2):
             first_half, second_half = SETBACK_WS.rsplit('/',1)
-            SETBACK_WS = first_half + "/" + time_stamp + "_" + second_half
-            f_handle = open(SETBACK_WS, 'a')
-        np.savetxt(f_handle,np.c_[['Toward Distance_in_Miles']],'%6s')
-        np.savetxt(f_handle,np.c_[['       5%   3%   1.5%']],'%21s')
-        wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
-        'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
-        'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
-        'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
-        'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
-        'NNW','-','-','-','-'])
-        mytab = np.zeros(wlab.size, dtype=[('col1', 'S6'), \
-        ('col2', float), ('col3', float), ('col4', float)])
-        mytab['col1'] = wlab
-        mytab['col2'] = np.round(Dtbl[:,0],2)
-        mytab['col3'] = np.round(Dtbl[:,1],2)
-        mytab['col4'] = np.round(Dtbl[:,2],2)
-        np.savetxt(f_handle, mytab, fmt="%6s %4.2f %4.2f %4.2f")
-        f_handle.close()
+            text_file_name = first_half + "/" + time_stamp + "_" + second_half
+            # f_handle = open(SETBACK_WS, 'a')
+        with open(text_file_name, 'wt') as f_handle:
+            np.savetxt(f_handle,np.c_[['Toward Distance_in_Miles']],'%6s', encoding='latin1')
+            np.savetxt(f_handle,np.c_[['       5%   3%   1.5%']],'%21s', encoding='latin1'  )
+            wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
+            'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
+            'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
+            'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
+            'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
+            'NNW','-','-','-','-'])
+            mytab = np.zeros(wlab.size, dtype=[('col1', 'S6'), \
+            ('col2', float), ('col3', float), ('col4', float)])
+            mytab['col1'] = wlab
+            mytab['col2'] = np.round(Dtbl[:,0],2)
+            mytab['col3'] = np.round(Dtbl[:,1],2)
+            mytab['col4'] = np.round(Dtbl[:,2],2)
+            np.savetxt(f_handle, mytab, fmt="%6s %4.2f %4.2f %4.2f",encoding='latin1')
+            debug_print(f"saved {text_file_name}")
+        # f_handle.close()
 
         #-----------Generate KML file with footprints drawn as polygons----------
 
@@ -489,6 +505,10 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
         pol.style.linestyle.width = 10
         pol.style.polystyle.outline = 1
         pol.style.polystyle.fill = 0
+        
+        SAVE_FOOTPRINT_FY = output_offset_dir + "kml_footprint_FY.kml" 
+        SAVE_FOOTPRINT_WS = output_offset_dir + "kml_footprint_WS.kml" 
+        
         if(topt == 1):
             first_half, second_half = SAVE_FOOTPRINT_FY.rsplit('/',1)
             SAVE_FOOTPRINT_FY = first_half + "/" + time_stamp + "_" + second_half
@@ -498,9 +518,13 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
             SAVE_FOOTPRINT_WS = first_half + "/" + time_stamp + "_" + second_half
             kml.save(SAVE_FOOTPRINT_WS)
 
+
         #----------Create ESRI shapefile (only output 5% footprint)--------------
         # uses pyshp
         # https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
+        
+        SHAPE_SOURCE_FY = output_offset_dir + 'shp_source_FY' 
+        SHAPE_SOURCE_WS = output_offset_dir + 'shp_source_WS' 
         if(topt == 1):
             first_half, second_half = SHAPE_SOURCE_FY.rsplit('/',1)
             shapeFileName = first_half + "/" + time_stamp + "_" + second_half
@@ -516,6 +540,9 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG):
         w.close()
 
         # polygon
+        SHAPE_FOOTPRINT_FY = output_offset_dir + 'shp_footprint_FY' 
+        SHAPE_FOOTPRINT_WS = output_offset_dir + 'shp_footprint_WS' 
+        
         if(topt == 1):
             first_half, second_half = SHAPE_FOOTPRINT_FY.rsplit('/',1)
             shapeFileName = first_half + "/" + time_stamp + "_" + second_half        # w = shapefile.Writer(SHAPE_FOOTPRINT_FY, shapeType=shapefile.POLYGON)
