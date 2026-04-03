@@ -288,6 +288,37 @@ def save_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: 
     return(footprints_plot_file_path, five_percent_plot_file_path)
 
 
+def write_setback_text_table(text_file_name: str, D: np.ndarray):
+    wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
+    'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
+    'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
+    'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
+    'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
+    'NNW','-','-','-','-'])
+
+    Dtbl=np.copy(D)
+    Dtbl[1:79,:]=D[0:78,:]
+    Dtbl[0]=D[79,:]
+    d5 = np.round(Dtbl[:,0],2)
+    d3 = np.round(Dtbl[:,1],2)
+    d15 = np.round(Dtbl[:,2],2)
+
+    header_lines = [
+        f"{'Toward Distance_in_Miles':>6}",
+        f"{'       5%   3%   1.5%':>21}",
+    ]
+    table_lines = [
+        f"{label:>6s} {v5:4.2f} {v3:4.2f} {v15:4.2f}"
+        for label, v5, v3, v15 in zip(wlab, d5, d3, d15)
+    ]
+    table_text = "\n".join(header_lines + table_lines) + "\n"
+
+    with open(text_file_name, 'wt') as f_handle:
+        f_handle.write(table_text)
+
+    return(text_file_name)
+    
+
 def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR):
     
     if(time_flag == 'F'):
@@ -468,26 +499,8 @@ def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG,
             text_file_name = add_prefix_to_filename(SETBACK_FY, file_prefix)
         elif(topt == 2):
             text_file_name = add_prefix_to_filename(SETBACK_WS, file_prefix)
-        
-        with open(text_file_name, 'wt') as f_handle:
-            f_handle.write(f"{'Toward Distance_in_Miles':>6}\n")
-            f_handle.write(f"{'       5%   3%   1.5%':>21}\n")
-            wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
-            'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
-            'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
-            'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
-            'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
-            'NNW','-','-','-','-'])
-            
-            Dtbl=np.copy(D)
-            Dtbl[1:79,:]=D[0:78,:]
-            Dtbl[0]=D[79,:]
-            d5 = np.round(Dtbl[:,0],2)
-            d3 = np.round(Dtbl[:,1],2)
-            d15 = np.round(Dtbl[:,2],2)
-            for label, v5, v3, v15 in zip(wlab, d5, d3, d15):
-                f_handle.write(f"{label:>6s} {v5:4.2f} {v3:4.2f} {v15:4.2f}\n")
-            debug_print(f"saved {text_file_name}")
+
+        write_setback_text_table(text_file_name=text_file_name, D=D)
 
         #-----------Generate KML file with footprints drawn as polygons----------
 
