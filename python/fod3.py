@@ -43,9 +43,8 @@ import time
 import zipfile
 import matplotlib.cm as cm
 from geopy import Point
-# vincenty method is deprecated, use geodesic method instead, but keep vincenty name for consistency with existing code
-# from geopy.distance import vincenty
-from geopy.distance import geodesic as vincenty
+# vincenty method is deprecated, use geodesic method instead
+from geopy.distance import geodesic
 import scipy.io as sio
 import simplekml
 import shapefile
@@ -540,11 +539,13 @@ def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG,
 
         
         # make a Lat/Lon array, used by both KML and shape file writers
+        # this is not the same as 2018 version:
+        #   b/c uses geodesic fn since vincenty was deprecated
         LL=np.empty((81,3,2), dtype=float, order='F')        
         for d in range(0,dbin.size):
             for p in range(0,3):
-                LL[d,p,1]=vincenty(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).latitude
-                LL[d,p,0]=vincenty(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).longitude
+                LL[d,p,1]=geodesic(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).latitude
+                LL[d,p,0]=geodesic(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).longitude
         LL[80,:,:]=LL[0,:,:]
         
         
