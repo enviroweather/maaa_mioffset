@@ -50,14 +50,21 @@ import scipy.io as sio
 import simplekml
 import shapefile
 
-DEBUG=os.getenv('DEBUG', True)
 
+DEBUG=os.getenv('DEBUG', True)
 
 def debug_print(x):
     if DEBUG:
         print(x)
-        
-        
+
+def add_prefix_to_filename(full_path: str, prefix: str = "") -> str:
+    """Return full_path with prefix applied only to the filename part."""
+
+    dir_name, file_name = os.path.split(full_path)
+    prefixed_name = prefix + file_name
+    if dir_name:
+        return os.path.join(dir_name, prefixed_name)
+    return prefixed_name
 
 #------------------------ Config -------------------------
 
@@ -147,14 +154,145 @@ def read_narr(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray, ts
     return(PC, WS, WD)
 
 
-def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR):
+def save_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
+    """create wind plots from model and save as PNGs
+
+    Args:
+        D (np.ndarray): Setback distance, computed as a function of wind stability class using OFFSET look-up tables (float)
+        E (float): Total Odor Emission Factor (float)
+        topt (int): time option
+        output_offset_dir (str): folder to save these in
+        file_prefix (str): optional prefix to add to file names to make them unique
+    """
+    #------Plot footprint on polar axes with standard white background-------
+
+    dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.
+    #   1.  First image: all three footprints (1.5%,3%,5%)
+    
+    ax = plt.subplot(111, projection='polar')
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(-1)
+    theta=np.radians(dbin)
+    ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
+    ax.plot(theta, D[:,0],'r-',theta, D[:,1],'b-',theta, D[:,2],'g-',lw=2.5)
+    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,0],D[0,0]],'r',lw=2.5,label='5%')
+    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,1],D[0,1]],'b',lw=2.5,label='3%')
+    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,2],D[0,2]],'g',lw=2.5,label='1.5%')
+    ax.set_xticks(np.arange(0,2*math.pi,2*math.pi/80))
+    ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
+    '','','','','ENE','','','','','E','','','','','ESE',
+    '','','','','SE','','','','','SSE','','','','','S',
+    '','','','','SSW','','','','','SW','','','','','WSW',
+    '','','','','W','','','','','WNW','','','','','NW',
+    '','','','','NNW','','','',''])
+
+    if(1.1*np.max(D[:,2]) >= 0.5):
+        yl=np.ceil(1.1*np.max(D[:,2]))
+        ax.set_ylim(0,yl)
+        ax.set_yticks(np.linspace(0,yl,num=11))
+        ax.set_yticklabels(np.round(np.linspace(0,yl,num=11),1))
+    else:
+        yl=0.5 # Small setback distance
+        ax.set_ylim(0,yl)
+        ax.set_yticks(np.linspace(0,yl,num=6))
+        ax.set_yticklabels(np.round(np.linspace(0,yl,num=6),1))
+    position=335
+    ax._r_label_position._t = (position, 0)
+    ax._r_label_position.invalidate()
+    ax.xaxis.set_tick_params(labelsize=14)
+    ax.yaxis.set_tick_params(labelsize=14,labelcolor='black')
+    if(topt == 1):
+        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
+        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
+    elif(topt == 2):
+        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
+        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8])
+
+    # Put a legend to the right of the current axis
+    lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
+    lg.draw_frame(False)
+    
+    if(topt == 1):
+        plot_file_name = "image_footprint_3inone_FY.png"         
+    elif(topt == 2):
+        plot_file_name=  "image_footprint_3inone_WS.png" 
+        
+    footprints_plot_file_path = add_prefix_to_filename(os.path.join(output_offset_dir, plot_file_name), file_prefix)
+    plt.savefig(footprints_plot_file_path, format='png', dpi=300, transparent=True)
+    debug_print(f"saved {footprints_plot_file_path}")
+    plt.close()
+    
+    
+    # ---------  2.   Second image: 5% footprint only.
+    ax = plt.subplot(111, projection='polar')
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(-1)
+    theta=np.radians(dbin)
+    ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
+    ax.plot(theta, D[:,0],'r-',lw=2.5)
+    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,0],D[0,0]],'r',lw=2.5,label='5%')
+    ax.set_xticks(np.arange(0,2*math.pi,2*math.pi/80))
+    ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
+    '','','','','ENE','','','','','E','','','','','ESE',
+    '','','','','SE','','','','','SSE','','','','','S',
+    '','','','','SSW','','','','','SW','','','','','WSW',
+    '','','','','W','','','','','WNW','','','','','NW',
+    '','','','','NNW','','','',''])
+
+    if(1.1*np.max(D[:,0]) >= 0.5):
+        yl=np.ceil(1.1*np.max(D[:,0]))
+        ax.set_ylim(0,yl)
+        ax.set_yticks(np.linspace(0,yl,num=11))
+        ax.set_yticklabels(np.round(np.linspace(0,yl,num=11),1))
+    else:
+        yl=0.5 # Small setback distance
+        ax.set_ylim(0,yl)
+        ax.set_yticks(np.linspace(0,yl,num=6))
+        ax.set_yticklabels(np.round(np.linspace(0,yl,num=6),1))
+    position=335
+    ax._r_label_position._t = (position, 0)
+    ax._r_label_position.invalidate()
+    ax.xaxis.set_tick_params(labelsize=14)
+    ax.yaxis.set_tick_params(labelsize=14,labelcolor='black')
+    if(topt == 1):
+        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
+        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
+    elif(topt == 2):
+        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
+        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8])
+
+    # Put a legend to the right of the current axis
+    lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
+    lg.draw_frame(False)
+
+    if(topt == 1):
+        plot_file_name = "image_footprint_FY.png"
+    elif(topt == 2):
+        plot_file_name = "image_footprint_WS.png"
+
+    five_percent_plot_file_path = add_prefix_to_filename(os.path.join(output_offset_dir, plot_file_name), file_prefix)
+    plt.savefig(five_percent_plot_file_path, format='png', dpi=300, transparent=True)
+    plt.close()
+
+    debug_print(f"saved {five_percent_plot_file_path}")
+
+    return(footprints_plot_file_path, five_percent_plot_file_path)
+
+
+def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR):
     
     if(time_flag == 'F'):
         tfs=1;tfe=1 #Full year dataset: 1 Jan - 31 Dec; run program once.
     elif(time_flag == 'W'):
         tfs=2;tfe=2;#Warm season dataset: 1 Apr - 31 Oct ; run program once.
     elif(time_flag == 'B'):
-        tfs=1;tfe=2#Run program twice, once for 1 Jan - 31 Dec (tfs=1), and a second time, for 1 Apr - 31 Oct. (tfe=2)
+        tfs=1;tfe=2 #Run program twice, once for 1 Jan - 31 Dec (tfs=1), and a second time, for 1 Apr - 31 Oct. (tfe=2)
     else:
         print('Incorrect time flag option, defaulting to full year')
         tfs=1;tfe=1				
@@ -314,147 +452,20 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, 
         # Special version of D array, with three "N" rows at top of table and other 
         # two "N" rows at bottom of table.  This is done in order to match how it 
         # is presented in existing MI Odor Print excel spreadsheet.
-        Dtbl=np.copy(D)
-        Dtbl[1:79,:]=D[0:78,:]
-        Dtbl[0]=D[79,:]
 
-
-        #------Plot footprint on polar axes with standard white background-------
-
-        dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.
-        #   1.  First image: all three footprints (1.5%,3%,5%)
-        
-        ax = plt.subplot(111, projection='polar')
-        ax.set_theta_zero_location('N')
-        ax.set_theta_direction(-1)
-        theta=np.radians(dbin)
-        ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
-        ax.plot(theta, D[:,0],'r-',theta, D[:,1],'b-',theta, D[:,2],'g-',lw=2.5)
-        ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,0],D[0,0]],'r',lw=2.5,label='5%')
-        ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,1],D[0,1]],'b',lw=2.5,label='3%')
-        ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,2],D[0,2]],'g',lw=2.5,label='1.5%')
-        ax.set_xticks(np.arange(0,2*math.pi,2*math.pi/80))
-        ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
-        '','','','','ENE','','','','','E','','','','','ESE',
-        '','','','','SE','','','','','SSE','','','','','S',
-        '','','','','SSW','','','','','SW','','','','','WSW',
-        '','','','','W','','','','','WNW','','','','','NW',
-        '','','','','NNW','','','',''])
-
-        if(1.1*np.max(D[:,2]) >= 0.5):
-            yl=np.ceil(1.1*np.max(D[:,2]))
-            ax.set_ylim(0,yl)
-            ax.set_yticks(np.linspace(0,yl,num=11))
-            ax.set_yticklabels(np.round(np.linspace(0,yl,num=11),1))
-        else:
-            yl=0.5 # Small setback distance
-            ax.set_ylim(0,yl)
-            ax.set_yticks(np.linspace(0,yl,num=6))
-            ax.set_yticklabels(np.round(np.linspace(0,yl,num=6),1))
-        position=335
-        ax._r_label_position._t = (position, 0)
-        ax._r_label_position.invalidate()
-        ax.xaxis.set_tick_params(labelsize=14)
-        ax.yaxis.set_tick_params(labelsize=14,labelcolor='black')
-        if(topt == 1):
-            ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-            + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-        elif(topt == 2):
-            ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-            + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-        # Shrink current axis by 20%
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8])
-
-        # Put a legend to the right of the current axis
-        lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
-        lg.draw_frame(False)
-
-
-        OUT_IMG_3_1_FY = output_offset_dir + "image_footprint_3inone_FY.png" 
-        OUT_IMG_3_1_WS = output_offset_dir + "image_footprint_3inone_WS.png" 
-        if(topt == 1):
-            first_half, second_half = OUT_IMG_3_1_FY.rsplit('/',1)
-            OUT_IMG_3_1_FY = first_half + "/" + time_stamp + "_" + second_half
-            plt.savefig(OUT_IMG_3_1_FY, format='png', dpi=300, transparent=True)
-            debug_print(f"saved {OUT_IMG_3_1_FY}")
-        elif(topt == 2):
-            first_half, second_half = OUT_IMG_3_1_WS.rsplit('/',1)
-            OUT_IMG_3_1_WS = first_half + "/" + time_stamp + "_" + second_half
-            plt.savefig(OUT_IMG_3_1_WS, format='png', dpi=300, transparent=True)
-            debug_print(f"saved {OUT_IMG_3_1_WS}")
-        plt.close()
-        
-        #   2.   Second image: 5% footprint only.
-        ax = plt.subplot(111, projection='polar')
-        ax.set_theta_zero_location('N')
-        ax.set_theta_direction(-1)
-        theta=np.radians(dbin)
-        ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
-        ax.plot(theta, D[:,0],'r-',lw=2.5)
-        ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,0],D[0,0]],'r',lw=2.5,label='5%')
-        ax.set_xticks(np.arange(0,2*math.pi,2*math.pi/80))
-        ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
-        '','','','','ENE','','','','','E','','','','','ESE',
-        '','','','','SE','','','','','SSE','','','','','S',
-        '','','','','SSW','','','','','SW','','','','','WSW',
-        '','','','','W','','','','','WNW','','','','','NW',
-        '','','','','NNW','','','',''])
-
-        if(1.1*np.max(D[:,0]) >= 0.5):
-            yl=np.ceil(1.1*np.max(D[:,0]))
-            ax.set_ylim(0,yl)
-            ax.set_yticks(np.linspace(0,yl,num=11))
-            ax.set_yticklabels(np.round(np.linspace(0,yl,num=11),1))
-        else:
-            yl=0.5 # Small setback distance
-            ax.set_ylim(0,yl)
-            ax.set_yticks(np.linspace(0,yl,num=6))
-            ax.set_yticklabels(np.round(np.linspace(0,yl,num=6),1))
-        position=335
-        ax._r_label_position._t = (position, 0)
-        ax._r_label_position.invalidate()
-        ax.xaxis.set_tick_params(labelsize=14)
-        ax.yaxis.set_tick_params(labelsize=14,labelcolor='black')
-        if(topt == 1):
-            ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-            + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-        elif(topt == 2):
-            ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-            + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-        # Shrink current axis by 20%
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8])
-
-        # Put a legend to the right of the current axis
-        lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
-        lg.draw_frame(False)
-
-        
-        OUT_IMG_FY = output_offset_dir + "image_footprint_FY.png" 
-        OUT_IMG_WS = output_offset_dir + "image_footprint_WS.png" 
-        if(topt == 1):
-            first_half, second_half = OUT_IMG_FY.rsplit('/',1)
-            OUT_IMG_FY = first_half + "/" + time_stamp + "_" + second_half
-            plt.savefig(OUT_IMG_FY, format='png', dpi=300, transparent=True)
-        elif(topt == 2):
-            first_half, second_half = OUT_IMG_WS.rsplit('/',1)
-            OUT_IMG_WS = first_half + "/" + time_stamp + "_" + second_half
-            plt.savefig(OUT_IMG_WS, format='png', dpi=300, transparent=True)
-        plt.close()
+        # neet to return D, E, topt
+        footprints_plot_file_path, five_percent_plot_file_path = save_footprint_plots(D=D, E=E, topt=topt, output_offset_dir=output_offset_dir, file_prefix=file_prefix)
 
 
         #---------Print formatted table to text file--------
         SETBACK_FY = output_offset_dir + 'table_setbackdistance_FY.txt' 
         SETBACK_WS = output_offset_dir + 'table_setbackdistance_WS.txt' 
+        
         if(topt == 1):
-            first_half, second_half = SETBACK_FY.rsplit('/',1)
-            text_file_name = first_half + "/" + time_stamp + "_" + second_half
-            # f_handle = open(SETBACK_FY, 'a')
+            text_file_name = add_prefix_to_filename(SETBACK_FY, file_prefix)
         elif(topt == 2):
-            first_half, second_half = SETBACK_WS.rsplit('/',1)
-            text_file_name = first_half + "/" + time_stamp + "_" + second_half
-            # f_handle = open(SETBACK_WS, 'a')
+            text_file_name = add_prefix_to_filename(SETBACK_WS, file_prefix)
+        
         with open(text_file_name, 'wt') as f_handle:
             f_handle.write(f"{'Toward Distance_in_Miles':>6}\n")
             f_handle.write(f"{'       5%   3%   1.5%':>21}\n")
@@ -464,13 +475,16 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, 
             'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
             'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
             'NNW','-','-','-','-'])
+            
+            Dtbl=np.copy(D)
+            Dtbl[1:79,:]=D[0:78,:]
+            Dtbl[0]=D[79,:]
             d5 = np.round(Dtbl[:,0],2)
             d3 = np.round(Dtbl[:,1],2)
             d15 = np.round(Dtbl[:,2],2)
             for label, v5, v3, v15 in zip(wlab, d5, d3, d15):
                 f_handle.write(f"{label:>6s} {v5:4.2f} {v3:4.2f} {v15:4.2f}\n")
             debug_print(f"saved {text_file_name}")
-        # f_handle.close()
 
         #-----------Generate KML file with footprints drawn as polygons----------
 
@@ -508,12 +522,10 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, 
         SAVE_FOOTPRINT_WS = output_offset_dir + "kml_footprint_WS.kml" 
         
         if(topt == 1):
-            first_half, second_half = SAVE_FOOTPRINT_FY.rsplit('/',1)
-            SAVE_FOOTPRINT_FY = first_half + "/" + time_stamp + "_" + second_half
+            SAVE_FOOTPRINT_FY = add_prefix_to_filename(SAVE_FOOTPRINT_FY, file_prefix)
             kml.save(SAVE_FOOTPRINT_FY)
         elif(topt == 2):
-            first_half, second_half = SAVE_FOOTPRINT_WS.rsplit('/',1)
-            SAVE_FOOTPRINT_WS = first_half + "/" + time_stamp + "_" + second_half
+            SAVE_FOOTPRINT_WS = add_prefix_to_filename(SAVE_FOOTPRINT_WS, file_prefix)
             kml.save(SAVE_FOOTPRINT_WS)
 
 
@@ -524,12 +536,10 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, 
         SHAPE_SOURCE_FY = output_offset_dir + 'shp_source_FY' 
         SHAPE_SOURCE_WS = output_offset_dir + 'shp_source_WS' 
         if(topt == 1):
-            first_half, second_half = SHAPE_SOURCE_FY.rsplit('/',1)
-            shapeFileName = first_half + "/" + time_stamp + "_" + second_half
+            shapeFileName = add_prefix_to_filename(SHAPE_SOURCE_FY, file_prefix)
         
         elif(topt == 2):
-            first_half, second_half = SHAPE_SOURCE_WS.rsplit('/',1)
-            shapeFileName = first_half + "/" + time_stamp + "_" + second_half
+            shapeFileName = add_prefix_to_filename(SHAPE_SOURCE_WS, file_prefix)
             
         w = shapefile.Writer(shapeFileName, shapeType=shapefile.POINT)
         w.point(lonval,latval)
@@ -542,11 +552,9 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, 
         SHAPE_FOOTPRINT_WS = output_offset_dir + 'shp_footprint_WS' 
         
         if(topt == 1):
-            first_half, second_half = SHAPE_FOOTPRINT_FY.rsplit('/',1)
-            shapeFileName = first_half + "/" + time_stamp + "_" + second_half        # w = shapefile.Writer(SHAPE_FOOTPRINT_FY, shapeType=shapefile.POLYGON)
+            shapeFileName = add_prefix_to_filename(SHAPE_FOOTPRINT_FY, file_prefix)        # w = shapefile.Writer(SHAPE_FOOTPRINT_FY, shapeType=shapefile.POLYGON)
         elif(topt == 2):
-            first_half, second_half = SHAPE_FOOTPRINT_WS.rsplit('/',1)
-            shapeFileName = first_half + "/" + time_stamp + "_" + second_half
+            shapeFileName = add_prefix_to_filename(SHAPE_FOOTPRINT_WS, file_prefix)
             
         w = shapefile.Writer(shapeFileName, shapeType=shapefile.POLYGON)    
         
@@ -555,23 +563,17 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, 
         w.record('5%_footprint')
         w.close()
 
-        
+        #---- create zip of shape file ---#
+        # this does NOT save the "WS" shape file created above in the zip
         zip_files = []
-        tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_footprint_FY.shx'
-        zip_files.append(tmpstr)
-        tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_footprint_FY.dbf'
-        zip_files.append(tmpstr)
-        tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_footprint_FY.shp'
-        zip_files.append(tmpstr)
-        tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_source_FY.shx'
-        zip_files.append(tmpstr)
-        tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_source_FY.shp'
-        zip_files.append(tmpstr)
-        tmpstr = OUTPUT_LOCATION + time_stamp + '_shp_source_FY.dbf'
-        zip_files.append(tmpstr)
 
-        zip_file =  OUTPUT_LOCATION + time_stamp+'_shape.zip'
+        for file_ext in ['shx', 'dbf', 'shp']:
+            tmpstr = os.path.join(output_offset_dir, file_prefix + f'_shp_footprint_FY.{file_ext}')
+            zip_files.append(tmpstr)
+            tmpstr = os.path.join(output_offset_dir, file_prefix + f'_shp_source_FY.{file_ext}')
+            zip_files.append(tmpstr)
 
+        zip_file =  os.path.join(output_offset_dir, file_prefix +'_shape.zip')
         shape_zip = zipfile.ZipFile(zip_file, 'w')
 
         tmp_str = []
@@ -590,7 +592,7 @@ if __name__ == "__main__":
     latval = float(sys.argv[1])
     lonval = float(sys.argv[2])
     odor_index = float(sys.argv[3])
-    time_stamp = sys.argv[4]
+    file_prefix = sys.argv[4]
     
     # validate here     
     LAT, LON = read_narr_lat_lon(narr_file = NARR_INPUT)
@@ -599,4 +601,4 @@ if __name__ == "__main__":
         print("Location outside the NARR domain.")
         sys.exit()
 
-    fod(latval, lonval, odor_index, time_stamp, LAT, LON)
+    fod(latval, lonval, odor_index, file_prefix, LAT, LON)
