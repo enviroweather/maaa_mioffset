@@ -156,7 +156,7 @@ def read_narr(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray, ts
     return(PC, WS, WD)
 
 
-def save_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
+def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
     """create wind plots from model and save as PNGs
 
     Args:
@@ -287,7 +287,18 @@ def save_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: 
     return(footprints_plot_file_path, five_percent_plot_file_path)
 
 
+
 def write_setback_text_table(text_file_name: str, D: np.ndarray):
+    """write text file of set-back distances in tabular form by direction
+
+    Args:
+        text_file_name (str): file name to save the table as
+        D (np.ndarray): array of setback distances
+        
+    Returns:
+        str: file name that was saved
+    """ 
+    
     wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
     'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
     'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
@@ -295,6 +306,9 @@ def write_setback_text_table(text_file_name: str, D: np.ndarray):
     'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
     'NNW','-','-','-','-'])
 
+    # Special special version of D array, with three "N" rows at top of table and other 
+    # two "N" rows at bottom of table.  This is done in order to match how it 
+    # is presented in existing MI Odor Print excel spreadsheet.
     Dtbl=np.copy(D)
     Dtbl[1:79,:]=D[0:78,:]
     Dtbl[0]=D[79,:]
@@ -318,7 +332,8 @@ def write_setback_text_table(text_file_name: str, D: np.ndarray):
     return(text_file_name)
     
 
-def save_kml(LL, E, latval, lonval, kml_file_name):
+
+def write_kml(LL, E, latval, lonval, kml_file_name):
     """create kml and save file from LL array 
 
     Args:
@@ -353,8 +368,261 @@ def save_kml(LL, E, latval, lonval, kml_file_name):
     pol.style.polystyle.fill = 0
             
     kml.save(kml_file_name)  
+
+
         
-def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR):
+def write_pointsource_shapefile(shapefile_name_stem:str, lonval:float, latval:float):
+    """save single point shape file for mapping point source using pyshp
+    https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
+    
+    Args:
+        shapefile_name_stem (str): base file name to use for components of shapefile
+        lonval (float): longitude of point
+        latval (float): latitude of point
+    
+    Returns:
+        list[str]: list of all the actual files that were saved
+    """
+    w = shapefile.Writer(shapefile_name_stem, shapeType=shapefile.POINT)
+    w.point(lonval,latval)
+    w.field('Point')
+    w.record('Odor_source')
+    w.close()
+    return([        
+        f"{shapefile_name_stem}.dbf",
+        f"{shapefile_name_stem}.shp",
+        f"{shapefile_name_stem}.shx",                
+    ])
+
+            
+
+def write_footprint_shapefile(shape_file_name_stem: str, LL: np.ndarray):
+    """Write the footprint polygon shapefile and return list of 
+    filenames created
+
+    Args:
+        shape_file_name_stem (str): the 'stem' of the file, a full path with 
+        a file name and no extension
+        LL (np.ndarray): Lat Lon of footprint ring (usually the 5% one)
+
+    Returns:
+        list[str]: list of all the actual files that were saved
+    """
+
+    # uses pyshp
+    # https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
+        
+    w = shapefile.Writer(shape_file_name_stem, shapeType=shapefile.POLYGON)
+    w.poly([LL[:,0,:].tolist()])
+    w.field('Polygon')
+    w.record('5%_footprint')
+    w.close()
+
+    return [
+        f"{shape_file_name_stem}.dbf",
+        f"{shape_file_name_stem}.shp",
+        f"{shape_file_name_stem}.shx",
+    ]
+
+
+def write_zipfile(zipfile_path: str, zip_files: list[str]):
+    """given list of files and zip file path, create and save
+    a zip file.  The items in the zip file have their directory 
+    stripped so unzipping will go directly into the target folder
+
+    Args:
+        zipfile_path (str): where to store the zip file
+        zip_files (list[str]): list of full paths to files to include
+    """
+    shape_zip = zipfile.ZipFile(zipfile_path, 'w')
+
+    tmp_str = []
+    for zfile in zip_files:
+        tmp_str = zfile.rsplit('/',1)
+        tmp_loc_file = tmp_str[1]
+        shape_zip.write(zfile, arcname=tmp_loc_file, compress_type=zipfile.ZIP_DEFLATED)
+
+    shape_zip.close()
+    return(zipfile_path)
+        
+def fod_model(latval, lonval, LAT, LON, E, topt=1):
+    """calculates an aray of setback distances in miles given wind
+    characterists for a coordinate in the state of Michigan 
+
+    Args:
+        latval (float): latitude of the point
+        lonval (float): longitude of the point
+        LAT (np.ndarray): array of wind characterists at Lat
+        LON (np.ndarray): array of longitudes
+        E (np.ndarray): array of elevations
+        topt (int, optional): _description_. Defaults to 1.
+    """
+    if(topt == 1):
+        # Use full dataset: 00 UCT 1 Jan to 21 UCT 31 Dec
+        ts=0
+        te=2920
+    elif(topt == 2):
+        # Restrict to 00 UTC 1 Apr (point #721, i.e., #720 in pythonese)
+        # to 21 UTC 31 Oct (point #2432, i.e., #2431 in pythonese).
+        # Recall that Xindi's data omits leap days.  So each year
+        # contains the same number of hours.
+        ts=720
+        te=2432
+    
+    
+    PC, WS, WD = read_narr(latval, lonval, LAT, LON, ts, te)
+    #-----------------------Wind direction processing------------------------
+
+    indx=np.random.RandomState(seed=8675309).permutation(WD.size)
+    wd4=[90,180,270,360]
+    i4=np.zeros((WD.size,4), dtype=int, order='F')
+    h,x = np.histogram(WD,bins=np.arange(0,361,1))
+    for m in range(0,4):
+        if(m<3):
+            a1=np.median(h[wd4[m]-1-6:wd4[m]-1-2])
+            a2=np.median(h[wd4[m]-1+2:wd4[m]-1+6])
+        else:
+            a1=np.median(h[wd4[m]-1-6:wd4[m]-1-2])
+            a2=np.median(h[1:5])
+        cap=round((a1+a2)/2)
+        I=WD==wd4[m];c=1;i4[:,m]=I.astype(int)
+        for t in range(0,i4[:,0].size):
+            tr=indx[t]
+            if((I[tr].astype(int)==1) & (c<=cap)):
+                i4[tr,m]=0
+                c=c+1	
+    Isum=np.sum(i4,1)
+    I1=Isum>0
+    I2=I1.astype(int)
+    WDds=np.copy(WD)
+    WDds[I2==1]=-999
+
+    #--------Footprint preliminary step 1: compute "windstar chart"----------
+    dbin=np.arange(11.25,360,22.5)
+    wc = np.zeros((16,6), dtype=float, order='F')
+    for d in range(0,dbin.size):
+        if (d == 0):									
+            PCs = PC[(WDds >= dbin[15]) | ((WDds < dbin[0]) & (WDds >= 0))]
+            WSs = WS[(WDds >= dbin[15]) | ((WDds < dbin[0]) & (WDds >= 0))]		
+        else:
+            PCs = PC[(WDds >= dbin[d-1]) & (WDds < dbin[d])]
+            WSs = WS[(WDds >= dbin[d-1]) & (WDds < dbin[d])]				
+        wc[d,0] = float((((PCs == 6) & (WSs <= 1.3)).sum()))/ float((WDds>=0).sum())*100
+        wc[d,1] = wc[d,0] + float((((PCs == 6) & (WSs > 1.3) & (WSs <= 3.1)).sum()))/ float((WDds>=0).sum())*100
+        wc[d,2] = wc[d,1] + float((((PCs == 5) & (WSs <= 3.1)).sum()))/ float((WDds>=0).sum())*100
+        wc[d,3] = wc[d,2] + float((((PCs == 5) & (WSs > 3.1) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
+        wc[d,4] = wc[d,3] + float((((PCs == 4) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
+        wc[d,5] = wc[d,4] + float((((PCs == 4) & (WSs > 5.4) & (WSs <= 8.0)).sum()))/ float((WDds>=0).sum())*100
+
+
+    #------Footprint preliminary step 2: identify 1.5%,3%,5% classess--------
+    f = np.zeros((5*dbin.size,3), dtype=int, order='F')
+    for d in range (0,dbin.size):
+        tem=np.round(wc[d,:],2)
+        if(d==0):
+            f[37:42,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[37:42,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[37:42,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==1):
+            f[42:47,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[42:47,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[42:47,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==2):
+            f[47:52,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[47:52,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[47:52,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==3):
+            f[52:57,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[52:57,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[52:57,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==4):
+            f[57:62,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[57:62,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[57:62,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==5):
+            f[62:67,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[62:67,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[62:67,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==6):
+            f[67:72,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[67:72,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[67:72,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==7):
+            f[72:77,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[72:77,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[72:77,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==8):
+            f[77:80,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[77:80,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[77:80,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+            f[0:2,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[0:2,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[0:2,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==9):
+            f[2:7,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[2:7,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[2:7,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==10):
+            f[7:12,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[7:12,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[7:12,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==11):
+            f[12:17,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[12:17,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[12:17,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==12):
+            f[17:22,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[17:22,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[17:22,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==13):
+            f[22:27,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[22:27,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[22:27,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==14):
+            f[27:32,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[27:32,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[27:32,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+        elif(d==15):
+            f[32:37,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+            f[32:37,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
+            f[32:37,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
+
+
+    #-------Footprint preliminary step 3: compute setback distance (D)-------
+    D = np.zeros((5*dbin.size,3), dtype=float, order='F')
+    for d in range (0,5*dbin.size):
+        for p in range (0,3):
+            if (f[d,p] == 1):
+                D[d,p]=0.1181*math.pow(E,0.5132) # Class 1
+            elif (f[d,p] == 2):
+                D[d,p]=0.0634*math.pow(E,0.5366) # Class 2
+            elif (f[d,p] == 3):
+                D[d,p]=0.0399*math.pow(E,0.5397) # Class 3   
+            elif (f[d,p] == 4):
+                D[d,p]=0.0242*math.pow(E,0.5844) # Class 4   
+            elif (f[d,p] == 5):  
+                D[d,p]=0.0175*math.pow(E,0.5827) # Class 5
+            elif (f[d,p] == 6):
+                D[d,p]=0.0101*math.pow(E,0.6264) # Class 6  
+                
+    return(D) 
+      
+              
+def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndarray, LON:np.ndarray, time_flag:str, output_offset_dir:str):
+    """coordinate the run of the FOD model and call functions to save various outputs
+
+    Args:
+        latval (float): latitude of point source   
+        lonval (float): longitude of point source
+        odor_index (int): odor index value
+        file_prefix (str): prefix for output files
+        LAT (np.ndarray): array of latitudes
+        LON (np.ndarray): array of longitudes
+        time_flag (str, optional): time flag for dataset selection. Defaults to TIME_FLAG on config file
+        output_offset_dir (str, optional): directory for output files  Defaults to OUTPUT_OFFSET_DIR.
+    """
+    
+    E = odor_index # doing this here to match legacy code and downstream fn's
     
     if(time_flag == 'F'):
         tfs=1;tfe=1 #Full year dataset: 1 Jan - 31 Dec; run program once.
@@ -366,165 +634,11 @@ def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG,
         print('Incorrect time flag option, defaulting to full year')
         tfs=1;tfe=1				
 
-    for topt in range(tfs,tfe+1):
-        if(topt == 1):
-            # Use full dataset: 00 UCT 1 Jan to 21 UCT 31 Dec
-            ts=0
-            te=2920
-        elif(topt == 2):
-            # Restrict to 00 UTC 1 Apr (point #721, i.e., #720 in pythonese)
-            # to 21 UTC 31 Oct (point #2432, i.e., #2431 in pythonese).
-            # Recall that Xindi's data omits leap days.  So each year
-            # contains the same number of hours.
-            ts=720
-            te=2432
-        
-        
-        PC, WS, WD = read_narr(latval, lonval, LAT, LON, ts, te)
-        #-----------------------Wind direction processing------------------------
+    # this runs once for flags F and W and twice for B
+    for topt in range(tfs,tfe+1):        
+        D = fod_model(latval=latval, lonval=lonval, LAT=LAT, LON=LON, E=E, topt=topt)
 
-        indx=np.random.RandomState(seed=8675309).permutation(WD.size)
-        wd4=[90,180,270,360]
-        i4=np.zeros((WD.size,4), dtype=int, order='F')
-        h,x = np.histogram(WD,bins=np.arange(0,361,1))
-        for m in range(0,4):
-            if(m<3):
-                a1=np.median(h[wd4[m]-1-6:wd4[m]-1-2])
-                a2=np.median(h[wd4[m]-1+2:wd4[m]-1+6])
-            else:
-                a1=np.median(h[wd4[m]-1-6:wd4[m]-1-2])
-                a2=np.median(h[1:5])
-            cap=round((a1+a2)/2)
-            I=WD==wd4[m];c=1;i4[:,m]=I.astype(int)
-            for t in range(0,i4[:,0].size):
-                tr=indx[t]
-                if((I[tr].astype(int)==1) & (c<=cap)):
-                    i4[tr,m]=0
-                    c=c+1	
-        Isum=np.sum(i4,1)
-        I1=Isum>0
-        I2=I1.astype(int)
-        WDds=np.copy(WD)
-        WDds[I2==1]=-999
-
-        #--------Footprint preliminary step 1: compute "windstar chart"----------
-
-        dbin=np.arange(11.25,360,22.5)
-        wc = np.zeros((16,6), dtype=float, order='F')
-        for d in range(0,dbin.size):
-            if (d == 0):									
-                PCs = PC[(WDds >= dbin[15]) | ((WDds < dbin[0]) & (WDds >= 0))]
-                WSs = WS[(WDds >= dbin[15]) | ((WDds < dbin[0]) & (WDds >= 0))]		
-            else:
-                PCs = PC[(WDds >= dbin[d-1]) & (WDds < dbin[d])]
-                WSs = WS[(WDds >= dbin[d-1]) & (WDds < dbin[d])]				
-            wc[d,0] = float((((PCs == 6) & (WSs <= 1.3)).sum()))/ float((WDds>=0).sum())*100
-            wc[d,1] = wc[d,0] + float((((PCs == 6) & (WSs > 1.3) & (WSs <= 3.1)).sum()))/ float((WDds>=0).sum())*100
-            wc[d,2] = wc[d,1] + float((((PCs == 5) & (WSs <= 3.1)).sum()))/ float((WDds>=0).sum())*100
-            wc[d,3] = wc[d,2] + float((((PCs == 5) & (WSs > 3.1) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
-            wc[d,4] = wc[d,3] + float((((PCs == 4) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
-            wc[d,5] = wc[d,4] + float((((PCs == 4) & (WSs > 5.4) & (WSs <= 8.0)).sum()))/ float((WDds>=0).sum())*100
-
-
-        #------Footprint preliminary step 2: identify 1.5%,3%,5% classess--------
-
-        f = np.zeros((5*dbin.size,3), dtype=int, order='F')
-        for d in range (0,dbin.size):
-            tem=np.round(wc[d,:],2)
-            if(d==0):
-                f[37:42,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[37:42,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[37:42,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==1):
-                f[42:47,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[42:47,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[42:47,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==2):
-                f[47:52,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[47:52,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[47:52,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==3):
-                f[52:57,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[52:57,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[52:57,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==4):
-                f[57:62,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[57:62,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[57:62,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==5):
-                f[62:67,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[62:67,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[62:67,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==6):
-                f[67:72,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[67:72,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[67:72,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==7):
-                f[72:77,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[72:77,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[72:77,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==8):
-                f[77:80,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[77:80,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[77:80,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-                f[0:2,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[0:2,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[0:2,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==9):
-                f[2:7,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[2:7,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[2:7,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==10):
-                f[7:12,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[7:12,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[7:12,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==11):
-                f[12:17,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[12:17,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[12:17,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==12):
-                f[17:22,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[17:22,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[17:22,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==13):
-                f[22:27,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[22:27,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[22:27,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==14):
-                f[27:32,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[27:32,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[27:32,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-            elif(d==15):
-                f[32:37,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
-                f[32:37,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
-                f[32:37,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-
-
-        #-------Footprint preliminary step 3: compute setback distance (D)-------
-
-        E = odor_index
-        D = np.zeros((5*dbin.size,3), dtype=float, order='F')
-        for d in range (0,5*dbin.size):
-            for p in range (0,3):
-                if (f[d,p] == 1):
-                    D[d,p]=0.1181*math.pow(E,0.5132) # Class 1
-                elif (f[d,p] == 2):
-                    D[d,p]=0.0634*math.pow(E,0.5366) # Class 2
-                elif (f[d,p] == 3):
-                    D[d,p]=0.0399*math.pow(E,0.5397) # Class 3   
-                elif (f[d,p] == 4):
-                    D[d,p]=0.0242*math.pow(E,0.5844) # Class 4   
-                elif (f[d,p] == 5):  
-                    D[d,p]=0.0175*math.pow(E,0.5827) # Class 5
-                elif (f[d,p] == 6):
-                    D[d,p]=0.0101*math.pow(E,0.6264) # Class 6   
-        # Special version of D array, with three "N" rows at top of table and other 
-        # two "N" rows at bottom of table.  This is done in order to match how it 
-        # is presented in existing MI Odor Print excel spreadsheet.
-
-        # neet to return D, E, topt
-        footprints_plot_file_path, five_percent_plot_file_path = save_footprint_plots(D=D, E=E, topt=topt, output_offset_dir=output_offset_dir, file_prefix=file_prefix)
-
+        footprints_plot_file_path, five_percent_plot_file_path = write_footprint_plots(D=D, E=E, topt=topt, output_offset_dir=output_offset_dir, file_prefix=file_prefix)
 
         #---------Print formatted table to text file--------        
         if(topt == 1):            
@@ -556,66 +670,44 @@ def fod(latval, lonval, odor_index,file_prefix, LAT, LON, time_flag = TIME_FLAG,
             file_name = "kml_footprint_WS.kml" 
             
         kml_file_name = add_prefix_to_filename(os.path.join(output_offset_dir, file_name), file_prefix)
-        save_kml(LL, E, latval, lonval, kml_file_name)
+        write_kml(LL, E, latval, lonval, kml_file_name)
 
 
         #----------Create ESRI shapefile (only output 5% footprint)--------------
-        # uses pyshp
-        # https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
-        
-        SHAPE_SOURCE_FY = output_offset_dir + 'shp_source_FY' 
-        SHAPE_SOURCE_WS = output_offset_dir + 'shp_source_WS' 
-        if(topt == 1):
-            shapeFileName = add_prefix_to_filename(SHAPE_SOURCE_FY, file_prefix)
-        
-        elif(topt == 2):
-            shapeFileName = add_prefix_to_filename(SHAPE_SOURCE_WS, file_prefix)
-            
-        w = shapefile.Writer(shapeFileName, shapeType=shapefile.POINT)
-        w.point(lonval,latval)
-        w.field('Point')
-        w.record('Odor_source')
-        w.close()
 
-        # polygon
-        SHAPE_FOOTPRINT_FY = output_offset_dir + 'shp_footprint_FY' 
-        SHAPE_FOOTPRINT_WS = output_offset_dir + 'shp_footprint_WS' 
-        
+        # point source
         if(topt == 1):
-            shapeFileName = add_prefix_to_filename(SHAPE_FOOTPRINT_FY, file_prefix)        # w = shapefile.Writer(SHAPE_FOOTPRINT_FY, shapeType=shapefile.POLYGON)
+            shapefile_name_stem = SHAPE_SOURCE_FY = 'shp_source_FY' 
         elif(topt == 2):
-            shapeFileName = add_prefix_to_filename(SHAPE_FOOTPRINT_WS, file_prefix)
-            
-        w = shapefile.Writer(shapeFileName, shapeType=shapefile.POLYGON)    
+            shapefile_name_stem = SHAPE_SOURCE_WS = 'shp_source_WS' 
+
+        shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
+
+        pointsource_shape_files = write_pointsource_shapefile(shapefile_name_stem, lonval, latval):
         
-        w.poly([LL[:,0,:].tolist()])
-        w.field('Polygon')
-        w.record('5%_footprint')
-        w.close()
+        # polygon
+        if(topt == 1):
+            shapefile_name_stem = SHAPE_FOOTPRINT_FY = 'shp_footprint_FY' 
+        elif(topt == 2):                   
+            shapefile_name_stem = SHAPE_FOOTPRINT_WS = 'shp_footprint_WS'      
+
+        shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
+        footprint_shape_files = write_footprint_shapefile(shape_file_name=shapefile_name_stem, LL=LL)
 
         #---- create zip of shape file ---#
-        # this does NOT save the "WS" shape file created above in the zip
-        zip_files = []
-
-        for file_ext in ['shx', 'dbf', 'shp']:
-            tmpstr = os.path.join(output_offset_dir, file_prefix + f'_shp_footprint_FY.{file_ext}')
-            zip_files.append(tmpstr)
-            tmpstr = os.path.join(output_offset_dir, file_prefix + f'_shp_source_FY.{file_ext}')
-            zip_files.append(tmpstr)
-
-        zip_file =  os.path.join(output_offset_dir, file_prefix +'_shape.zip')
-        shape_zip = zipfile.ZipFile(zip_file, 'w')
-
-        tmp_str = []
-        for zfile in zip_files:
-            tmp_str = zfile.rsplit('/',1)
-            tmp_loc_file = tmp_str[1]
-            shape_zip.write(zfile, arcname=tmp_loc_file, compress_type=zipfile.ZIP_DEFLATED)
-
-        shape_zip.close()
-        return(zip_file)
-
+        
+        zip_files = pointsource_shape_files + footprint_shape_files
+        if(topt == 1):
+            zipfile_name = 'fy_shapefile.zip' 
+        elif(topt == 2):                   
+            zipfile_name = 'ws_shapefile.zip' 
+        
+        zipfile_path =  add_prefix_to_filename(os.path.join(output_offset_dir,  zipfile_name), file_prefix)
+    
+        zipfile_path = write_zipfile(zipfile_path, zip_files)
+        
     # end for loop 
+    # 
 
 
 if __name__ == "__main__":
@@ -631,4 +723,4 @@ if __name__ == "__main__":
         print("Location outside the NARR domain.")
         sys.exit()
 
-    fod(latval, lonval, odor_index, file_prefix, LAT, LON)
+    fod(latval, lonval, odor_index, file_prefix, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR)
