@@ -57,8 +57,11 @@ def debug_print(x):
     if DEBUG:
         print(x)
 
-def add_prefix_to_filename(full_path: str, prefix: str = "") -> str:
+def add_prefix_to_filename(full_path: str, prefix: str = "", prefix_sep: str = "_") -> str:
     """Return full_path with prefix applied only to the filename part."""
+    
+    if prefix[-1] != prefix_sep:
+        prefix += prefix_sep 
 
     dir_name, file_name = os.path.split(full_path)
     prefixed_name = prefix + file_name
