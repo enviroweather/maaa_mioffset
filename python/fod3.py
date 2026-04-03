@@ -456,21 +456,19 @@ def fod(latval, lonval, odor_index,time_stamp, LAT, LON, time_flag = TIME_FLAG, 
             text_file_name = first_half + "/" + time_stamp + "_" + second_half
             # f_handle = open(SETBACK_WS, 'a')
         with open(text_file_name, 'wt') as f_handle:
-            np.savetxt(f_handle,np.c_[['Toward Distance_in_Miles']],'%6s', encoding='latin1')
-            np.savetxt(f_handle,np.c_[['       5%   3%   1.5%']],'%21s', encoding='latin1'  )
+            f_handle.write(f"{'Toward Distance_in_Miles':>6}\n")
+            f_handle.write(f"{'       5%   3%   1.5%':>21}\n")
             wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
             'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
             'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
             'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
             'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
             'NNW','-','-','-','-'])
-            mytab = np.zeros(wlab.size, dtype=[('col1', 'S6'), \
-            ('col2', float), ('col3', float), ('col4', float)])
-            mytab['col1'] = wlab
-            mytab['col2'] = np.round(Dtbl[:,0],2)
-            mytab['col3'] = np.round(Dtbl[:,1],2)
-            mytab['col4'] = np.round(Dtbl[:,2],2)
-            np.savetxt(f_handle, mytab, fmt="%6s %4.2f %4.2f %4.2f",encoding='latin1')
+            d5 = np.round(Dtbl[:,0],2)
+            d3 = np.round(Dtbl[:,1],2)
+            d15 = np.round(Dtbl[:,2],2)
+            for label, v5, v3, v15 in zip(wlab, d5, d3, d15):
+                f_handle.write(f"{label:>6s} {v5:4.2f} {v3:4.2f} {v15:4.2f}\n")
             debug_print(f"saved {text_file_name}")
         # f_handle.close()
 
