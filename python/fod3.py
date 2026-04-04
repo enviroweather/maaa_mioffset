@@ -684,7 +684,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         elif(topt == 2):
             shapefile_name_stem = SHAPE_SOURCE_WS = 'shp_source_WS' 
 
-        shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
+        shapefile_name_stem = add_prefix_to_filename(os.path.join(output_offset_dir, shapefile_name_stem), file_prefix)
 
         pointsource_shape_files = write_pointsource_shapefile(shapefile_name_stem, lonval, latval)
         
@@ -694,8 +694,8 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         elif(topt == 2):                   
             shapefile_name_stem = SHAPE_FOOTPRINT_WS = 'shp_footprint_WS'      
 
-        shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
-        footprint_shape_files = write_footprint_shapefile(shape_file_name=shapefile_name_stem, LL=LL)
+        shapefile_name_stem = add_prefix_to_filename(os.path.join(output_offset_dir, shapefile_name_stem), file_prefix)
+        footprint_shape_files = write_footprint_shapefile(shape_file_name_stem=shapefile_name_stem, LL=LL)
 
         #---- create zip of shape file ---#
         
