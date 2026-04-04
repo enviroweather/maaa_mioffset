@@ -655,7 +655,10 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         # make a Lat/Lon array, used by both KML and shape file writers
         # this is not the same as 2018 version:
         #   b/c uses geodesic fn since vincenty was deprecated
+        
+        dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.        
         LL=np.empty((81,3,2), dtype=float, order='F')        
+        
         for d in range(0,dbin.size):
             for p in range(0,3):
                 LL[d,p,1]=geodesic(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).latitude
