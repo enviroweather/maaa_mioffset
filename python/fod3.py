@@ -686,7 +686,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
 
         shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
 
-        pointsource_shape_files = write_pointsource_shapefile(shapefile_name_stem, lonval, latval):
+        pointsource_shape_files = write_pointsource_shapefile(shapefile_name_stem, lonval, latval)
         
         # polygon
         if(topt == 1):
