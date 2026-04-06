@@ -12,7 +12,10 @@
 #
 #	alterations for using in PHP application by Tracy Aichle
 #   
-#   March 2026: Python 3 untested by working version (Patrick Bills, MSU ICER)
+#   April 2026 refactoring (Pat Bills, MSU ICER)
+#     + refactored into distinct functions for optimization and testing 
+#     
+#   March 2026: Python 3 untested by working version (Pat Bills, MSU ICER)
 #     + various python 2 to 3 conversions
 #     + removed imports and code that is no longer used
 #     + np types (np.float) are deprecated
@@ -83,8 +86,14 @@ from fod_config import *
 # D:  Setback distance, computed as a function of wind 
 #     stability class using OFFSET look-up tables (float)
 # E:  Total Odor Emission Factor (float)
+
+# glossary
+# FY: full year
+# wind_speed: W? season
 #------------------------------------------------------------------------
 
+
+######### DATA READING
 
 def read_narr_lat_lon( narr_file:str = NARR_INPUT):
     """read in lat,lon for converting lat lon to climatology grid indices
@@ -119,8 +128,101 @@ def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarr
     return(True)
 
 
+
+# called before and inside the loop by years
+def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str = NARR_INPUT_LOC):
+    """_summary_
+
+    Args:
+        yr (int): year of data to read, embedded in filename
+        idy (int): index of grid y coordinate (North/South)
+        idx (int): index of grid x coordinate (East/West)
+        narr_input_loc (str): path to NARR input files and file name stem
+            default to a constant read in from configuration
+
+    Returns:
+        tuple of np arrays: values for PC, WD and WS from one grid point, all hours
+    """
+    h5f_annual_filename = narr_input_loc + str(yr) + '_BC.h5','r'
+    h5f = h5py.File(h5f_annual_filename)
+    # extract all values for one year
+    # previously filtered at read time, like
+    #  pc_1year = h5f['pc'][idy,idx,ts:te]
+    pc_1year = h5f['P_C'][idy,idx,]
+    ws_1year = h5f['wind_speed'][idy,idx,]
+    wd_1year = h5f['wind_direction'][idy,idx,]
+    return pc_1year, ws_1year, wd_1year
+
+
+def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str = NARR_INPUT_LOC, narr_file:str = NARR_INPUT):
+    """read in wind data for all available years 
+
+    Args:
+        latval (float): _description_
+        lonval (float): _description_
+        narr_input_loc (str, optional): _description_. Defaults to NARR_INPUT_LOC.
+        narr_file (str, optional): _description_. Defaults to NARR_INPUT.
+
+    Raises:
+        ValueError: _description_
+    """
+
+    # get coordinate to grid index map arrays
+    LAT, LON = read_narr_lat_lon(narr_file = NARR_INPUT)
+    
+    if not validate_latlon(latval, lonval, LAT, LON):
+        raise ValueError("Location outside the NARR domain.")
+    
+    # get grid index point for closest grid point using simplified euclidean dist
+    distance:float = (LAT-latval)**2 + (LON-lonval)**2
+    # if input lat and/or lon are equidistant from grid point, this defaults
+    # to the most SW corner (I think )
+    idy, idx = np.where(distance==distance.min())
+    idy=int(idy[0]);idx=int(idx[0]);
+    
+    # move this to a parameter if data is updated
+    available_years = list(range(1979,2009,1))
+   
+    # note on variable names:I don't know what "PC" stands for so made is pc 
+    # since all caps vars are for constants
+  
+    # start the time series arrays by reading the first year, removing it from the list
+    pc, wind_speed, wind_direction = read_one_year(available_years.pop(0), idx, idy, narr_input_loc)
+    
+    for yr in available_years:
+        pc_1year, ws_1year, wd_1year = read_one_year(yr,idy, idx, narr_input_loc)
+        # note on py2 to 3 conversion: 
+        # it was axis=1 in original script but that doesn't work on 1-d arrays
+        # axis=0 combines row-wise for 1-d array, which following code uses
+        pc=np.concatenate((pc,pc_1year),axis=0)
+        wind_speed=np.concatenate((wind_speed,ws_1year),axis=0)
+        wind_direction=np.concatenate((wind_direction,wd_1year),axis=0)
+                
+    return(pc, wind_speed, wind_direction)
+    
+    
+def filter_narr_timeseries(pc, ws, wd, ts:int=0, te:int=2920):
+    """filter NARR timeseries data
+
+    Args:
+        pc (np.ndarray): Pressure data
+        ws (np.ndarray): Wind speed data
+        wd (np.ndarray): Wind direction data
+        ts (int): time start index default=0, start of data
+        te (int): time endindex, default 2920, all data
+
+    Returns:
+        tuple: Filtered data (pc, ws, wd).  If using default ts,te, return all data
+    """
+    return pc[ts:te], ws[ts:te], wd[ts:te]
+
+
+
+######### OLD VERSION DATA READING
+
+
 def read_narr(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray, ts: int, te: int):
-    """get wind climatology for all years for point
+    """ OLD VERSION get wind climatology for all years for point
 
     Args:
         latval (float): latitude value
@@ -138,23 +240,25 @@ def read_narr(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray, ts
 
     for yr in range(1979,2009,1):
         h5f = h5py.File(NARR_INPUT_LOC + str(yr) + '_BC.h5','r')
-        PC1 = h5f['PC'][idy,idx,ts:te]
-        WS1 = h5f['WS'][idy,idx,ts:te]
-        WD1 = h5f['WD'][idy,idx,ts:te]
+        pc_1year = h5f['pc'][idy,idx,ts:te]
+        ws_1year = h5f['wind_speed'][idy,idx,ts:te]
+        wd_1year = h5f['wind_direction'][idy,idx,ts:te]
         if (yr == 1979):
-            PC=PC1
-            WS=WS1
-            WD=WD1
+            pc=pc_1year
+            wind_speed=ws_1year
+            wind_direction=wd_1year
         else:
             # py2 to 3 conversion: 
             # it was axis=1 in original script but that doesn't work on 1-d arrays
             # axis=0 combines row-wise for 1-d array, which following code uses
-            PC=np.concatenate((PC,PC1),axis=0)
-            WS=np.concatenate((WS,WS1),axis=0)
-            WD=np.concatenate((WD,WD1),axis=0)
+            pc=np.concatenate((pc,pc_1year),axis=0)
+            wind_speed=np.concatenate((wind_speed,ws_1year),axis=0)
+            wind_direction=np.concatenate((wind_direction,wd_1year),axis=0)
                 
-    return(PC, WS, WD)
+    return(pc, wind_speed, wind_direction)
 
+
+####### VISUALIZATIONS ##########
 
 def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
     """create wind plots from model and save as PNGs
@@ -184,7 +288,7 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
     ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
     '','','','','ENE','','','','','E','','','','','ESE',
     '','','','','SE','','','','','SSE','','','','','S',
-    '','','','','SSW','','','','','SW','','','','','WSW',
+    '','','','','SSW','','','','','SW','','','','','wind_speedW',
     '','','','','W','','','','','WNW','','','','','NW',
     '','','','','NNW','','','',''])
 
@@ -220,7 +324,7 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
     if(topt == 1):
         plot_file_name = "image_footprint_3inone_FY.png"         
     elif(topt == 2):
-        plot_file_name=  "image_footprint_3inone_WS.png" 
+        plot_file_name=  "image_footprint_3inone_wind_speed.png" 
         
     footprints_plot_file_path = add_prefix_to_filename(os.path.join(output_offset_dir, plot_file_name), file_prefix)
     plt.savefig(footprints_plot_file_path, format='png', dpi=300, transparent=True)
@@ -240,7 +344,7 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
     ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
     '','','','','ENE','','','','','E','','','','','ESE',
     '','','','','SE','','','','','SSE','','','','','S',
-    '','','','','SSW','','','','','SW','','','','','WSW',
+    '','','','','SSW','','','','','SW','','','','','wind_speedW',
     '','','','','W','','','','','WNW','','','','','NW',
     '','','','','NNW','','','',''])
 
@@ -276,7 +380,7 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
     if(topt == 1):
         plot_file_name = "image_footprint_FY.png"
     elif(topt == 2):
-        plot_file_name = "image_footprint_WS.png"
+        plot_file_name = "image_footprint_wind_speed.png"
 
     five_percent_plot_file_path = add_prefix_to_filename(os.path.join(output_offset_dir, plot_file_name), file_prefix)
     plt.savefig(five_percent_plot_file_path, format='png', dpi=300, transparent=True)
@@ -302,7 +406,7 @@ def write_setback_text_table(text_file_name: str, D: np.ndarray):
     wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
     'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
     'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
-    'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
+    'SSW','-','-','-','-','SW','-','-','-','-','wind_speedW','-','-','-','-', \
     'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
     'NNW','-','-','-','-'])
 
@@ -332,6 +436,7 @@ def write_setback_text_table(text_file_name: str, D: np.ndarray):
     return(text_file_name)
     
 
+########## MAPPING ###########
 
 def write_kml(LL, E, latval, lonval, kml_file_name):
     """create kml and save file from LL array 
@@ -444,6 +549,10 @@ def write_zipfile(zipfile_path: str, zip_files: list[str]):
 
     shape_zip.close()
     return(zipfile_path)
+
+
+
+###### MAIN MODEL 
         
 def fod_model(latval, lonval, LAT, LON, E, topt=1):
     """calculates an aray of setback distances in miles given wind
@@ -470,13 +579,13 @@ def fod_model(latval, lonval, LAT, LON, E, topt=1):
         te=2432
     
     
-    PC, WS, WD = read_narr(latval, lonval, LAT, LON, ts, te)
+    pc, wind_speed, wind_direction = read_narr(latval, lonval, LAT, LON, ts, te)
     #-----------------------Wind direction processing------------------------
 
-    indx=np.random.RandomState(seed=8675309).permutation(WD.size)
+    indx=np.random.RandomState(seed=8675309).permutation(wind_direction.size)
     wd4=[90,180,270,360]
-    i4=np.zeros((WD.size,4), dtype=int, order='F')
-    h,x = np.histogram(WD,bins=np.arange(0,361,1))
+    i4=np.zeros((wind_direction.size,4), dtype=int, order='F')
+    h,x = np.histogram(wind_direction,bins=np.arange(0,361,1))
     for m in range(0,4):
         if(m<3):
             a1=np.median(h[wd4[m]-1-6:wd4[m]-1-2])
@@ -485,7 +594,7 @@ def fod_model(latval, lonval, LAT, LON, E, topt=1):
             a1=np.median(h[wd4[m]-1-6:wd4[m]-1-2])
             a2=np.median(h[1:5])
         cap=round((a1+a2)/2)
-        I=WD==wd4[m];c=1;i4[:,m]=I.astype(int)
+        I=wind_direction==wd4[m];c=1;i4[:,m]=I.astype(int)
         for t in range(0,i4[:,0].size):
             tr=indx[t]
             if((I[tr].astype(int)==1) & (c<=cap)):
@@ -494,25 +603,25 @@ def fod_model(latval, lonval, LAT, LON, E, topt=1):
     Isum=np.sum(i4,1)
     I1=Isum>0
     I2=I1.astype(int)
-    WDds=np.copy(WD)
-    WDds[I2==1]=-999
+    wind_directionds=np.copy(wind_direction)
+    wind_directionds[I2==1]=-999
 
     #--------Footprint preliminary step 1: compute "windstar chart"----------
     dbin=np.arange(11.25,360,22.5)
     wc = np.zeros((16,6), dtype=float, order='F')
     for d in range(0,dbin.size):
         if (d == 0):									
-            PCs = PC[(WDds >= dbin[15]) | ((WDds < dbin[0]) & (WDds >= 0))]
-            WSs = WS[(WDds >= dbin[15]) | ((WDds < dbin[0]) & (WDds >= 0))]		
+            pcs = pc[(wind_directionds >= dbin[15]) | ((wind_directionds < dbin[0]) & (wind_directionds >= 0))]
+            wind_speeds = wind_speed[(wind_directionds >= dbin[15]) | ((wind_directionds < dbin[0]) & (wind_directionds >= 0))]		
         else:
-            PCs = PC[(WDds >= dbin[d-1]) & (WDds < dbin[d])]
-            WSs = WS[(WDds >= dbin[d-1]) & (WDds < dbin[d])]				
-        wc[d,0] = float((((PCs == 6) & (WSs <= 1.3)).sum()))/ float((WDds>=0).sum())*100
-        wc[d,1] = wc[d,0] + float((((PCs == 6) & (WSs > 1.3) & (WSs <= 3.1)).sum()))/ float((WDds>=0).sum())*100
-        wc[d,2] = wc[d,1] + float((((PCs == 5) & (WSs <= 3.1)).sum()))/ float((WDds>=0).sum())*100
-        wc[d,3] = wc[d,2] + float((((PCs == 5) & (WSs > 3.1) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
-        wc[d,4] = wc[d,3] + float((((PCs == 4) & (WSs <= 5.4)).sum()))/ float((WDds>=0).sum())*100
-        wc[d,5] = wc[d,4] + float((((PCs == 4) & (WSs > 5.4) & (WSs <= 8.0)).sum()))/ float((WDds>=0).sum())*100
+            pcs = pc[(wind_directionds >= dbin[d-1]) & (wind_directionds < dbin[d])]
+            wind_speeds = wind_speed[(wind_directionds >= dbin[d-1]) & (wind_directionds < dbin[d])]				
+        wc[d,0] = float((((pcs == 6) & (wind_speeds <= 1.3)).sum()))/ float((wind_directionds>=0).sum())*100
+        wc[d,1] = wc[d,0] + float((((pcs == 6) & (wind_speeds > 1.3) & (wind_speeds <= 3.1)).sum()))/ float((wind_directionds>=0).sum())*100
+        wc[d,2] = wc[d,1] + float((((pcs == 5) & (wind_speeds <= 3.1)).sum()))/ float((wind_directionds>=0).sum())*100
+        wc[d,3] = wc[d,2] + float((((pcs == 5) & (wind_speeds > 3.1) & (wind_speeds <= 5.4)).sum()))/ float((wind_directionds>=0).sum())*100
+        wc[d,4] = wc[d,3] + float((((pcs == 4) & (wind_speeds <= 5.4)).sum()))/ float((wind_directionds>=0).sum())*100
+        wc[d,5] = wc[d,4] + float((((pcs == 4) & (wind_speeds > 5.4) & (wind_speeds <= 8.0)).sum()))/ float((wind_directionds>=0).sum())*100
 
 
     #------Footprint preliminary step 2: identify 1.5%,3%,5% classess--------
@@ -635,16 +744,17 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         tfs=1;tfe=1				
 
     # this runs once for flags F and W and twice for B
-    for topt in range(tfs,tfe+1):        
+    for topt in range(tfs,tfe+1):
+        # run model (which reads data)        
         D = fod_model(latval=latval, lonval=lonval, LAT=LAT, LON=LON, E=E, topt=topt)
-
+        # save polar plots as png files
         footprints_plot_file_path, five_percent_plot_file_path = write_footprint_plots(D=D, E=E, topt=topt, output_offset_dir=output_offset_dir, file_prefix=file_prefix)
 
         #---------Print formatted table to text file--------        
         if(topt == 1):            
             text_file_name = 'table_setbackdistance_FY.txt'            
         elif(topt == 2):
-            text_file_name = 'table_setbackdistance_WS.txt'         
+            text_file_name = 'table_setbackdistance_wind_speed.txt'         
             
         text_file_name = add_prefix_to_filename(
             os.path.join(output_offset_dir, text_file_name), file_prefix)
@@ -670,7 +780,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         if(topt == 1):
             file_name = "kml_footprint_FY.kml"
         elif(topt == 2):
-            file_name = "kml_footprint_WS.kml" 
+            file_name = "kml_footprint_wind_speed.kml" 
             
         kml_file_name = add_prefix_to_filename(os.path.join(output_offset_dir, file_name), file_prefix)
         write_kml(LL, E, latval, lonval, kml_file_name)
@@ -682,7 +792,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         if(topt == 1):
             shapefile_name_stem = SHAPE_SOURCE_FY = 'shp_source_FY' 
         elif(topt == 2):
-            shapefile_name_stem = SHAPE_SOURCE_WS = 'shp_source_WS' 
+            shapefile_name_stem = SHAPE_SOURCE_wind_speed = 'shp_source_wind_speed' 
 
         shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
 
@@ -692,7 +802,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         if(topt == 1):
             shapefile_name_stem = SHAPE_FOOTPRINT_FY = 'shp_footprint_FY' 
         elif(topt == 2):                   
-            shapefile_name_stem = SHAPE_FOOTPRINT_WS = 'shp_footprint_WS'      
+            shapefile_name_stem = SHAPE_FOOTPRINT_wind_speed = 'shp_footprint_wind_speed'      
 
         shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
         footprint_shape_files = write_footprint_shapefile(shape_file_name=shapefile_name_stem, LL=LL)
