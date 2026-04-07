@@ -189,10 +189,10 @@ def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str, narr_f
     # since all caps vars are for constants
   
     # start the time series arrays by reading the first year, removing it from the list
-    pc, wind_speed, wind_direction = read_one_year(available_years.pop(0), idx, idy, narr_input_loc)
+    pc, wind_speed, wind_direction = read_one_year(yr=available_years.pop(0), idx=idx, idy=idy, narr_input_loc=narr_input_loc)
     
     for yr in available_years:
-        pc_1year, ws_1year, wd_1year = read_one_year(yr,idy, idx, narr_input_loc)
+        pc_1year, ws_1year, wd_1year = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_loc= narr_input_loc)
         # note on py2 to 3 conversion: 
         # it was axis=1 in original script but that doesn't work on 1-d arrays
         # axis=0 combines row-wise for 1-d array, which following code uses
@@ -736,7 +736,8 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         tfs=1;tfe=1				
 
     # read in wind data for coordinates
-    pc, wind_speed, wind_direction = read_narr_timeseries(latval=latval, lonval=lonval, narr_input_loc=narr_input_loc, narr_file=narr_file)
+    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval,narr_input_loc, narr_file)
+    # latval=latval, lonval=lonval, narr_input_loc=narr_input_loc, narr_file=narr_file) 
     
     # this runs once for flags F and W and twice for B
     for topt in range(tfs,tfe+1):
