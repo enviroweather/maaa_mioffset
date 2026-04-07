@@ -219,47 +219,6 @@ def filter_narr_timeseries(pc, ws, wd, ts:int=0, te:int=2920):
     return pc[ts:te], ws[ts:te], wd[ts:te]
 
 
-
-######### OLD VERSION DATA READING
-
-
-def read_narr(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray, ts: int, te: int):
-    """ OLD VERSION get wind climatology for all years for point
-
-    Args:
-        latval (float): latitude value
-        lonval (float): longitude value
-        LAT (np.ndarray): latitude grid
-        LON (np.ndarray): longitude grid
-        ts (int): start time index
-        te (int): end time index
-    """
-    
-    distance:float = (LAT-latval)**2 + (LON-lonval)**2
-    idy, idx = np.where(distance==distance.min())
-    idy=int(idy[0]);idx=int(idx[0]);
-
-
-    for yr in range(1979,2009,1):
-        h5f = h5py.File(NARR_INPUT_LOC + str(yr) + '_BC.h5','r')
-        pc_1year = h5f['pc'][idy,idx,ts:te]
-        ws_1year = h5f['wind_speed'][idy,idx,ts:te]
-        wd_1year = h5f['wind_direction'][idy,idx,ts:te]
-        if (yr == 1979):
-            pc=pc_1year
-            wind_speed=ws_1year
-            wind_direction=wd_1year
-        else:
-            # py2 to 3 conversion: 
-            # it was axis=1 in original script but that doesn't work on 1-d arrays
-            # axis=0 combines row-wise for 1-d array, which following code uses
-            pc=np.concatenate((pc,pc_1year),axis=0)
-            wind_speed=np.concatenate((wind_speed,ws_1year),axis=0)
-            wind_direction=np.concatenate((wind_direction,wd_1year),axis=0)
-                
-    return(pc, wind_speed, wind_direction)
-
-
 ####### VISUALIZATIONS ##########
 
 def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
@@ -644,8 +603,8 @@ def fod_model(pc:np.array, wind_speed:np.array, wind_direction:np.array, odor_in
             f[62:67,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
             f[62:67,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
             f[62:67,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
-        elif(d==6):
             f[67:72,2]=np.min(np.where(tem==max(tem[tem<=1.5])))+1
+        elif(d==6):
             f[67:72,1]=np.min(np.where(tem==max(tem[tem<=3])))+1
             f[67:72,0]=np.min(np.where(tem==max(tem[tem<=5])))+1
         elif(d==7):
