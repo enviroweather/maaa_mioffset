@@ -130,7 +130,7 @@ def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarr
 
 
 # called before and inside the loop by years
-def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str = NARR_INPUT_LOC):
+def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str):
     """read one year hf5 file, extra 3 datasets and filter just one coordinate
     Files must be named like narr_PSD_1980_BC.h5
     
@@ -155,7 +155,7 @@ def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str = NARR_INPUT_LOC
     return pc_1year, ws_1year, wd_1year
 
 
-def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str = NARR_INPUT_LOC, narr_file:str = NARR_INPUT):
+def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str, narr_file:str):
     """read in wind data for all available years 
 
     Args:
@@ -169,7 +169,7 @@ def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str = NARR_
     """
 
     # get coordinate to grid index map arrays
-    LAT, LON = read_narr_lat_lon(narr_file = NARR_INPUT)
+    LAT, LON = read_narr_lat_lon(narr_file)
     
     if not validate_latlon(latval, lonval, LAT, LON):
         raise ValueError("Location outside the NARR domain.")
@@ -709,8 +709,7 @@ def fod_model(pc:np.array, wind_speed:np.array, wind_direction:np.array, odor_in
     return(D) 
       
      
-              
-def fod(odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str):
+def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_input:str, narr_input_loc:str):
     """coordinate the run of the FOD model and call functions to save various outputs
 
     Args:
@@ -737,7 +736,7 @@ def fod(odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str):
         tfs=1;tfe=1				
 
     # read in wind data for coordinates
-    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval, narr_input_loc=NARR_INPUT_LOC, narr_input=NARR_INPUT)
+    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval, narr_input_loc=narr_input_loc, narr_input=narr_input)
 
     # this runs once for flags F and W and twice for B
     for topt in range(tfs,tfe+1):
@@ -841,4 +840,10 @@ if __name__ == "__main__":
     file_prefix = sys.argv[4]
     
     # raises exception if location is outside the NARR domain
-    fod(latval, lonval, odor_index, file_prefix, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR)
+    # gather additional params from "config" python script
+    time_flag = TIME_FLAG
+    output_offset_dir=OUTPUT_OFFSET_DIR
+    narr_input_loc=NARR_INPUT_LOC
+    narr_input=NARR_INPUT
+    
+    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_input, narr_input_loc)
