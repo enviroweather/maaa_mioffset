@@ -556,34 +556,24 @@ def write_zipfile(zipfile_path: str, zip_files: list[str]):
 
 ###### MAIN MODEL 
         
-def fod_model(latval, lonval, LAT, LON, E, topt=1):
+def fod_model(pc:np.array, wind_speed:np.array, wind_direction:np.array, odor_index:int):
     """calculates an aray of setback distances in miles given wind
     characterists for a coordinate in the state of Michigan 
 
     Args:
         latval (float): latitude of the point
         lonval (float): longitude of the point
-        LAT (np.ndarray): array of wind characterists at Lat
-        LON (np.ndarray): array of longitudes
-        E (np.ndarray): array of elevations
-        topt (int, optional): _description_. Defaults to 1.
+        o (np.ndarray): Odor index
+        pc (np.ndarray): time series of ?
+        wind_speed (np.ndarray): time series of wind speeds
+        wind_direction (np.ndarray): time series of wind directions
+        topt (int, optional): time options   Defaults to 1.
     """
-    if(topt == 1):
-        # Use full dataset: 00 UCT 1 Jan to 21 UCT 31 Dec
-        ts=0
-        te=2920
-    elif(topt == 2):
-        # Restrict to 00 UTC 1 Apr (point #721, i.e., #720 in pythonese)
-        # to 21 UTC 31 Oct (point #2432, i.e., #2431 in pythonese).
-        # Recall that Xindi's data omits leap days.  So each year
-        # contains the same number of hours.
-        ts=720
-        te=2432
-    
-    
-    pc, wind_speed, wind_direction = read_narr(latval, lonval, LAT, LON, ts, te)
-    #-----------------------Wind direction processing------------------------
 
+    # see variable list in comments above
+    E = odor_index
+    #-----------------------Wind direction processing------------------------
+    
     indx=np.random.RandomState(seed=8675309).permutation(wind_direction.size)
     wd4=[90,180,270,360]
     i4=np.zeros((wind_direction.size,4), dtype=int, order='F')
@@ -718,8 +708,9 @@ def fod_model(latval, lonval, LAT, LON, E, topt=1):
                 
     return(D) 
       
+     
               
-def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndarray, LON:np.ndarray, time_flag:str, output_offset_dir:str):
+def fod(odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str):
     """coordinate the run of the FOD model and call functions to save various outputs
 
     Args:
@@ -745,18 +736,37 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         print('Incorrect time flag option, defaulting to full year')
         tfs=1;tfe=1				
 
+    # read in wind data for coordinates
+    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval, narr_input_loc=NARR_INPUT_LOC, narr_input=NARR_INPUT)
+
     # this runs once for flags F and W and twice for B
     for topt in range(tfs,tfe+1):
-        # run model (which reads data)        
-        D = fod_model(latval=latval, lonval=lonval, LAT=LAT, LON=LON, E=E, topt=topt)
-        # save polar plots as png files
+        if(topt == 1):
+            # Use full dataset: 00 UCT 1 Jan to 21 UCT 31 Dec
+            ts,te=(0,2920)
+        elif(topt == 2):
+            # Restrict to 00 UTC 1 Apr (point #721, i.e., #720 in pythonese)
+            # to 21 UTC 31 Oct (point #2432, i.e., #2431 in pythonese).
+            # Recall that Xindi's data omits leap days.  So each year
+            # contains the same number of hours.
+            ts,te=(720,2432)
+        
+        # filter, mostly for option 2
+        pc, wind_speed, wind_direction = filter_narr_timeseries(pc, wind_speed, wind_direction, ts, te)
+        
+        # run model        
+        D = fod_model(pc=pc, wind_speed=wind_speed, wind_direction=wind_direction, odor_index=odor_index)
+        
+        # save polar plots as png files, save file names
+        
         footprints_plot_file_path, five_percent_plot_file_path = write_footprint_plots(D=D, E=E, topt=topt, output_offset_dir=output_offset_dir, file_prefix=file_prefix)
+
 
         #---------Print formatted table to text file--------        
         if(topt == 1):            
             text_file_name = 'table_setbackdistance_FY.txt'            
         elif(topt == 2):
-            text_file_name = 'table_setbackdistance_wind_speed.txt'         
+            text_file_name = 'table_setbackdistance_WS.txt'         
             
         text_file_name = add_prefix_to_filename(
             os.path.join(output_offset_dir, text_file_name), file_prefix)
@@ -782,7 +792,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         if(topt == 1):
             file_name = "kml_footprint_FY.kml"
         elif(topt == 2):
-            file_name = "kml_footprint_wind_speed.kml" 
+            file_name = "kml_footprint_WS.kml" 
             
         kml_file_name = add_prefix_to_filename(os.path.join(output_offset_dir, file_name), file_prefix)
         write_kml(LL, E, latval, lonval, kml_file_name)
@@ -794,7 +804,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         if(topt == 1):
             shapefile_name_stem = SHAPE_SOURCE_FY = 'shp_source_FY' 
         elif(topt == 2):
-            shapefile_name_stem = SHAPE_SOURCE_wind_speed = 'shp_source_wind_speed' 
+            shapefile_name_stem = SHAPE_SOURCE_WS = 'shp_source_WS' 
 
         shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
 
@@ -804,7 +814,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
         if(topt == 1):
             shapefile_name_stem = SHAPE_FOOTPRINT_FY = 'shp_footprint_FY' 
         elif(topt == 2):                   
-            shapefile_name_stem = SHAPE_FOOTPRINT_wind_speed = 'shp_footprint_wind_speed'      
+            shapefile_name_stem = SHAPE_FOOTPRINT_WS = 'shp_footprint_WS'      
 
         shapefile_name_stem = add_prefix_to_filename(os.join(output_offset_dir, shapefile_name_stem), file_prefix)
         footprint_shape_files = write_footprint_shapefile(shape_file_name=shapefile_name_stem, LL=LL)
@@ -821,8 +831,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, LAT:np.ndar
     
         zipfile_path = write_zipfile(zipfile_path, zip_files)
         
-    # end for loop 
-    # 
+    # end for loop
 
 
 if __name__ == "__main__":
@@ -831,11 +840,5 @@ if __name__ == "__main__":
     odor_index = float(sys.argv[3])
     file_prefix = sys.argv[4]
     
-    # validate here     
-    LAT, LON = read_narr_lat_lon(narr_file = NARR_INPUT)
-    
-    if not validate_latlon(latval, lonval, LAT, LON):
-        print("Location outside the NARR domain.")
-        sys.exit()
-
-    fod(latval, lonval, odor_index, file_prefix, LAT, LON, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR)
+    # raises exception if location is outside the NARR domain
+    fod(latval, lonval, odor_index, file_prefix, time_flag = TIME_FLAG, output_offset_dir=OUTPUT_OFFSET_DIR)
