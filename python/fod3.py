@@ -709,7 +709,7 @@ def fod_model(pc:np.array, wind_speed:np.array, wind_direction:np.array, odor_in
     return(D) 
       
      
-def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_input:str, narr_input_loc:str):
+def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_file:str, narr_input_loc:str):
     """coordinate the run of the FOD model and call functions to save various outputs
 
     Args:
@@ -736,8 +736,8 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         tfs=1;tfe=1				
 
     # read in wind data for coordinates
-    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval, narr_input_loc=narr_input_loc, narr_input=narr_input)
-
+    pc, wind_speed, wind_direction = read_narr_timeseries(latval=latval, lonval=lonval, narr_input_loc=narr_input_loc, narr_file=narr_file)
+    
     # this runs once for flags F and W and twice for B
     for topt in range(tfs,tfe+1):
         if(topt == 1):
@@ -844,6 +844,6 @@ if __name__ == "__main__":
     time_flag = TIME_FLAG
     output_offset_dir=OUTPUT_OFFSET_DIR
     narr_input_loc=NARR_INPUT_LOC
-    narr_input=NARR_INPUT
+    narr_file=NARR_INPUT
     
-    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_input, narr_input_loc)
+    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,nar_file=narr_file, narr_input_loc=narr_input_loc)
