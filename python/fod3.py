@@ -131,8 +131,9 @@ def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarr
 
 # called before and inside the loop by years
 def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str = NARR_INPUT_LOC):
-    """_summary_
-
+    """read one year hf5 file, extra 3 datasets and filter just one coordinate
+    Files must be named like narr_PSD_1980_BC.h5
+    
     Args:
         yr (int): year of data to read, embedded in filename
         idy (int): index of grid y coordinate (North/South)
@@ -141,16 +142,16 @@ def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str = NARR_INPUT_LOC
             default to a constant read in from configuration
 
     Returns:
-        tuple of np arrays: values for PC, WD and WS from one grid point, all hours
+        tuple of np arrays: timeseries values for PC, WD and WS from one grid point, all hours
     """
-    h5f_annual_filename = narr_input_loc + str(yr) + '_BC.h5','r'
-    h5f = h5py.File(h5f_annual_filename)
+    h5f_annual_filename = narr_input_loc + str(yr) + '_BC.h5'
+    h5f = h5py.File(h5f_annual_filename, 'r')
     # extract all values for one year
     # previously filtered at read time, like
     #  pc_1year = h5f['pc'][idy,idx,ts:te]
-    pc_1year = h5f['P_C'][idy,idx,]
-    ws_1year = h5f['wind_speed'][idy,idx,]
-    wd_1year = h5f['wind_direction'][idy,idx,]
+    pc_1year = h5f['PC'][idy,idx,]
+    ws_1year = h5f['WS'][idy,idx,]
+    wd_1year = h5f['WD'][idy,idx,]
     return pc_1year, ws_1year, wd_1year
 
 
@@ -174,11 +175,12 @@ def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str = NARR_
         raise ValueError("Location outside the NARR domain.")
     
     # get grid index point for closest grid point using simplified euclidean dist
-    distance:float = (LAT-latval)**2 + (LON-lonval)**2
+    distance:np.ndarray = (LAT-latval)**2 + (LON-lonval)**2
     # if input lat and/or lon are equidistant from grid point, this defaults
     # to the most SW corner (I think )
-    idy, idx = np.where(distance==distance.min())
-    idy=int(idy[0]);idx=int(idx[0]);
+    idy_array, idx_array = np.where(distance==distance.min()) # tuple of arrays
+    idy:int=int(idy_array[0])
+    idx:int=int(idx_array[0]) # pick first element of arrays
     
     # move this to a parameter if data is updated
     available_years = list(range(1979,2009,1))
