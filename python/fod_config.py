@@ -5,6 +5,8 @@
 # relative to this py 
 BASE_DIR = "/mnt/research/ICER-RSE/clients/enviroweather/mioffset"
 NARR_INPUT = BASE_DIR + "/h5/narr_latlon.h5" 
+NARR_INPUT_DIR = BASE_DIR + "/h5/" 
+
 NARR_INPUT_LOC = BASE_DIR + "/h5/narr_PSD_" 
 
 

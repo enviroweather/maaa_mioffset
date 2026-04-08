@@ -130,7 +130,7 @@ def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarr
 
 
 # called before and inside the loop by years
-def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str):
+def read_one_year(yr:str,idy: int, idx: int, narr_input_dir:str):
     """read one year hf5 file, extra 3 datasets and filter just one coordinate
     Files must be named like narr_PSD_1980_BC.h5
     
@@ -138,13 +138,13 @@ def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str):
         yr (int): year of data to read, embedded in filename
         idy (int): index of grid y coordinate (North/South)
         idx (int): index of grid x coordinate (East/West)
-        narr_input_loc (str): path to NARR input files and file name stem
-            default to a constant read in from configuration
-
+        narr_input_dir (str): path to NARR input files
     Returns:
         tuple of np arrays: timeseries values for PC, WD and WS from one grid point, all hours
     """
-    h5f_annual_filename = narr_input_loc + str(yr) + '_BC.h5'
+    narr_file_name = f"narr_PSD_{yr}_BC.h5"
+    
+    h5f_annual_filename = os.path.join(narr_input_dir, narr_file_name)
     h5f = h5py.File(h5f_annual_filename, 'r')
     # extract all values for one year
     # previously filtered at read time, like
@@ -155,13 +155,13 @@ def read_one_year(yr:str,idy: int, idx: int, narr_input_loc:str):
     return pc_1year, ws_1year, wd_1year
 
 
-def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str, narr_file:str):
+def read_narr_timeseries(latval: float, lonval: float,narr_input_dir:str, narr_file:str):
     """read in wind data for all available years 
 
     Args:
         latval (float): _description_
         lonval (float): _description_
-        narr_input_loc (str, optional): _description_. Defaults to NARR_INPUT_LOC.
+        narr_input_dir (str, optional): _description_. Defaults to narr_input_dir.
         narr_file (str, optional): _description_. Defaults to NARR_INPUT.
 
     Raises:
@@ -189,10 +189,10 @@ def read_narr_timeseries(latval: float, lonval: float,narr_input_loc:str, narr_f
     # since all caps vars are for constants
   
     # start the time series arrays by reading the first year, removing it from the list
-    pc, wind_speed, wind_direction = read_one_year(yr=available_years.pop(0), idx=idx, idy=idy, narr_input_loc=narr_input_loc)
+    pc, wind_speed, wind_direction = read_one_year(yr=available_years.pop(0), idx=idx, idy=idy, narr_input_dir=narr_input_dir)
     
     for yr in available_years:
-        pc_1year, ws_1year, wd_1year = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_loc= narr_input_loc)
+        pc_1year, ws_1year, wd_1year = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_dir= narr_input_dir)
         # note on py2 to 3 conversion: 
         # it was axis=1 in original script but that doesn't work on 1-d arrays
         # axis=0 combines row-wise for 1-d array, which following code uses
@@ -668,7 +668,7 @@ def fod_model(pc:np.array, wind_speed:np.array, wind_direction:np.array, odor_in
     return(D) 
       
      
-def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_file:str, narr_input_loc:str):
+def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_file:str, narr_input_dir:str):
     """coordinate the run of the FOD model and call functions to save various outputs
 
     Args:
@@ -695,8 +695,8 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         tfs=1;tfe=1				
 
     # read in wind data for coordinates
-    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval,narr_input_loc, narr_file)
-    # latval=latval, lonval=lonval, narr_input_loc=narr_input_loc, narr_file=narr_file) 
+    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval,narr_input_dir, narr_file)
+    # latval=latval, lonval=lonval, narr_input_dir=narr_input_dir, narr_file=narr_file) 
     
     # this runs once for flags F and W and twice for B
     for topt in range(tfs,tfe+1):
@@ -803,7 +803,6 @@ if __name__ == "__main__":
     # gather additional params from "config" python script
     time_flag = TIME_FLAG
     output_offset_dir=OUTPUT_OFFSET_DIR
-    narr_input_loc=NARR_INPUT_LOC
     narr_file=NARR_INPUT
-    
-    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_file=narr_file, narr_input_loc=narr_input_loc)
+    narr_input_dir=NARR_INPUT_DIR
+    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_file=narr_file, narr_input_dir=narr_input_dir)
