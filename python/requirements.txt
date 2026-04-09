@@ -5,3 +5,5 @@ numpy
 scipy
 pyshp
 simplekml
+python-dotenv
+boto3
