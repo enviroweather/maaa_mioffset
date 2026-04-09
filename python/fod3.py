@@ -128,6 +128,16 @@ def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarr
     return(True)
 
 
+def path_to_narrfile(yr:int, narr_input_dir):
+    """
+    very simple helper to create path to narr file by year
+    for use in different parts of the program or for file mgmt
+    """
+
+    narr_file_name = f"narr_PSD_{yr}_BC.h5"
+    h5f_annual_filename = os.path.join(narr_input_dir, narr_file_name)
+    return(h5f_annual_filename)
+
 
 # called before and inside the loop by years
 def read_one_year(yr:str,idy: int, idx: int, narr_input_dir:str):
@@ -142,9 +152,9 @@ def read_one_year(yr:str,idy: int, idx: int, narr_input_dir:str):
     Returns:
         tuple of np arrays: timeseries values for PC, WD and WS from one grid point, all hours
     """
-    narr_file_name = f"narr_PSD_{yr}_BC.h5"
     
-    h5f_annual_filename = os.path.join(narr_input_dir, narr_file_name)
+    h5f_annual_filename = path_to_narrfile(yr, narr_input_dir  ) 
+
     h5f = h5py.File(h5f_annual_filename, 'r')
     # extract all values for one year
     # previously filtered at read time, like
