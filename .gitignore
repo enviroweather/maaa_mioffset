@@ -8,3 +8,7 @@ python/__pycache__
 .venv/
 output/*
 tmp/*
+
+# ide stuff
+settings.json
+.vscode/
