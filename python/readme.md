@@ -54,6 +54,13 @@ This does not have a `conda` environment file currently.
 
 ### Params in Config File 
 
+Configuration now uses the "dot-env" system where configuration settings are in a shell file 
+rather than a python file named `.env` and kept out of git.  Open the example config file 
+`dot-env-example.txt` fill in the variables and save as `.env`  You don't need to enter the AWS 
+credentials to run the system unless you will be using the portion that reads from Cloud 
+storage (to be written)
+
+
 **TIME_FLAG** 
 
  - 'F' = (default) Full year dataset: 1 Jan - 31 Dec; run program once.

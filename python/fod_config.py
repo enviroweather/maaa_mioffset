@@ -3,19 +3,18 @@
 #######
 # HDF5 input data files
 # relative to this py 
-BASE_DIR = "/mnt/research/ICER-RSE/clients/enviroweather/mioffset"
-NARR_INPUT = BASE_DIR + "/h5/narr_latlon.h5" 
-NARR_INPUT_DIR = BASE_DIR + "/h5/" 
-
-NARR_INPUT_LOC = BASE_DIR + "/h5/narr_PSD_" 
+# BASE_DIR = "/mnt/research/ICER-RSE/clients/enviroweather/mioffset"
+# NARR_INPUT = BASE_DIR + "/h5/narr_latlon.h5" 
+# NARR_INPUT_DIR = BASE_DIR + "/h5/" 
+# NARR_INPUT_LOC = BASE_DIR + "/h5/narr_PSD_" 
 
 
 ####
 # base location to store output files
-OUTPUT_OFFSET_DIR = '../tmp/'   # This is needed for creating the zip file; It is relative to the executable 
+# OUTPUT_OFFSET_DIR = '../tmp/'   # This is needed for creating the zip file; It is relative to the executable 
 # used to save shapefile zip only.  for now set it to be the same.  simplify this later 
 #
-OUTPUT_LOCATION = OUTPUT_OFFSET_DIR
+# OUTPUT_LOCATION = OUTPUT_OFFSET_DIR
 
 
 #####
@@ -48,13 +47,13 @@ OUTPUT_LOCATION = OUTPUT_OFFSET_DIR
 
 #### 
 # url for map making
-PLACE_MARK = 'http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png' 
+# PLACE_MARK = 'http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png' 
 
 
 ########
 # unused
 # ?
-INPUT_FILE = "/home/web-ewx/webdir/legacy/mioffset/footprint_input.txt" 
+# INPUT_FILE = "/home/web-ewx/webdir/legacy/mioffset/footprint_input.txt" 
 # the NARR files are explicitly named in the fod3.py code, so this is not used
 # however, setting it for this config
 # NARR_DATA_FOLDER = BASE_DIR + "/h5/" 
@@ -67,10 +66,10 @@ INPUT_FILE = "/home/web-ewx/webdir/legacy/mioffset/footprint_input.txt"
 # program paramaters defaults/testing?  unknown
 # Eventually, the values below will all be passed by the web page, thus we will be able to comment them out 
 
-LOC_FLAG = 'L' 
-NUM_OF_SOURCES = '3'
-SOURCE_1 = "1,100000,6,0.1"
-SOURCE_2 = "2,100000,42,0.5"
-SOURCE_3 = "3,5000,28,0.5"
-TIME_FLAG = 'F' 
+# LOC_FLAG = 'L' 
+# NUM_OF_SOURCES = '3'
+# SOURCE_1 = "1,100000,6,0.1"
+# SOURCE_2 = "2,100000,42,0.5"
+# SOURCE_3 = "3,5000,28,0.5"
+# TIME_FLAG = 'F' 
 

@@ -51,7 +51,7 @@ from geopy.distance import geodesic
 import scipy.io as sio
 import simplekml
 import shapefile
-
+from dotenv import load_dotenv
 
 DEBUG=os.getenv('DEBUG', True)
 
@@ -409,6 +409,8 @@ def write_kml(LL, E, latval, lonval, kml_file_name):
         kml_file_name (str): full path to kml file to save
     """
     
+    PLACE_MARK = 'http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png' 
+
     kml = simplekml.Kml()
     pnt=kml.newpoint(name="", coords=[(lonval,latval)])  # Source
     pnt.name = 'E=' +str(E)
@@ -794,6 +796,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
 
 
 if __name__ == "__main__":
+
     latval = float(sys.argv[1])
     lonval = float(sys.argv[2])
     odor_index = float(sys.argv[3])
@@ -801,8 +804,9 @@ if __name__ == "__main__":
     
     # raises exception if location is outside the NARR domain
     # gather additional params from "config" python script
-    time_flag = TIME_FLAG
-    output_offset_dir=OUTPUT_OFFSET_DIR
-    narr_file=NARR_INPUT
-    narr_input_dir=NARR_INPUT_DIR
+    load_dotenv()
+    time_flag = os.getenv("TIME_FLAG")
+    output_offset_dir=os.getenv("OUTPUT_OFFSET_DIR")
+    narr_file=os.getenv("NARR_INPUT")
+    narr_input_dir=os.getenv("NARR_INPUT_DIR")
     fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_file=narr_file, narr_input_dir=narr_input_dir)
