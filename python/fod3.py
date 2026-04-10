@@ -95,13 +95,20 @@ from fod_config import *
 
 ######### DATA READING
 
-def read_narr_lat_lon( narr_file:str = NARR_INPUT):
+def read_narr_lat_lon( narr_file:str = None):
     """read in lat,lon for converting lat lon to climatology grid indices
 
     Args:
-        narr_file (str, optional): string full path to the NARR input file. 
+        narr_file (str): string full path to the NARR input file. 
             Defaults to NARR_INPUT.
     """
+    if narr_file is None:
+        narr_file = os.getenv('NARR_INPUT')
+    
+    if not os.path.exists(narr_file):
+        Warning("NARR file not found.")
+        return None, None
+    
     with h5py.File(narr_file,'r') as hf:
         data = hf.get('LAT')
         LAT = np.array(data)
