@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import boto3
 from os import getenv
 
-def aws_config(dotenv_file = None):
+def get_aws_config(dotenv_file = None):
     
     # load env and get the very latest
     if dotenv_file:
@@ -28,7 +28,7 @@ def aws_config(dotenv_file = None):
 
 def get_s3_client(aws_config = None):
     if aws_config is None:
-        aws_config = aws_config()
+        aws_config = get_aws_config()
     session = boto3.Session(**aws_config)
     s3_client = session.client('s3')
     return(s3_client)

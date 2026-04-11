@@ -10,8 +10,8 @@ from aws import get_s3_client, check_bucket, aws_config
 
 import numpy as np
 
+print("importing fod3 file which takes forever")
 from fod3 import path_to_narrfile # read_narr_lat_lon,validate_latlon,read_one_year,read_narr_timeseries, 
-
 
 def read_one_year_grid(yr:str,narr_input_dir:str):
     """read one year hf5 file, extra 3 datasets
@@ -36,7 +36,7 @@ def read_one_year_grid(yr:str,narr_input_dir:str):
 
 
 
-# AWS setup
+print("AWS setup")
 load_dotenv()
 s3_client = get_s3_client()  # use default dot-env
 narr_bucket = os.getenv('BUCKET_NAME')
@@ -54,6 +54,7 @@ if not os.path.exists(path_to_narrfile(2001, narr_input_dir)):
     
 
 ##### read in all NARR data
+print("reading narr data")
 narr_data = {}
 for yr in years:
     print(yr)
