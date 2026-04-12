@@ -7,7 +7,8 @@ import json
 print('importing libs')
 from dotenv import load_dotenv
 import h5py
-import numpy as np
+# this is only needed when reading data in
+#import numpy as np
 
 
 print('import aws module')
@@ -32,13 +33,7 @@ def read_one_year_grid(yr:str,narr_input_dir:str):
     
     h5f_annual_filename = path_to_narrfile(yr, narr_input_dir)
     h5f = h5py.File(h5f_annual_filename, 'r')
-    # extract all values for one year
     return(h5f)
-    # pc_1year = h5f['PC']
-    # ws_1year = h5f['WS']
-    # wd_1year = h5f['WD']
-    # return pc_1year, ws_1year, wd_1year
-
 
 
 print("AWS setup")
@@ -58,17 +53,18 @@ if not os.path.exists(path_to_narrfile(2001, narr_input_dir)):
     sys.exit(1)
     
 
-##### read in all NARR data
+##########
 print("reading narr data")
 narr_data = {}
 for yr in years:
     print(yr)
-    narr_data = read_one_year_grid(yr, narr_input_dir)
+    narr_data[yr] = read_one_year_grid(yr, narr_input_dir)
  
-########## build coordinates
+########## 
+print("build coordinates")
 # one_year = read_one_year_grid(1979, narr_input_dir=narr_input_dir)
-yr = years[0]
-one_year = narr_data[yr]['PC']
+
+one_year = narr_data[years[0]]['PC']
 
 grid_size_x = one_year.shape[0]
 grid_size_y = one_year.shape[1]
@@ -83,42 +79,45 @@ for a in xdx:
         coords.append( [ a, b ] )
     
 
-### main data transform loop
-## all 3 datasets are in single dict narr_data[yr][dataset][x][y](ts)
+######
+print(" main data transform loop")
+## we  3 datasets from the F5 files, in single dict narr_data[yr][dataset][x][y](ts)
 datasets = ['PC', 'WS', 'WD']
 
 # check these are all in the h5 file! 
 
-for coord in coords:     
+def narr_filename(dataset:str, x:int,y:int ):
+    """
+    helper function for standard naming of a narr file for one coordinate and all years
+    """
+    one_coord_filename=f"{dataset.lower()}/{dataset.lower()}_{x:03}_{y:03}.json"
+    return(one_coord_filename)
+
+
+for coord in coords:
     print(coord)
     x,y = coord
     
-    # extract all yrs timeseries's for one coordinate per dataset
+    # extract one coordinate's timeseries' for all years per dataset
+    # into new dict structure
     one_coord = {'PC': {}, 'WS': {}, 'WD': {}}
-    for yr in years[0:2]:
+    for yr in years:
         print(f"\t {yr}")
         for dataset in datasets :
-            one_coord[dataset][yr] = list(map(float, narr_data[yr][dataset][x][y]))        
-            # one_coord['WS'][yr] = list(map(float, WS[yr][x][y]))
-            # one_coord['WD'][yr] = list(map(float, PC[yr][x][y]))
-        
+            # timeseries data read in as a NP value, convert these to float new storage
+            one_coord[dataset][yr] = list( map(float, narr_data[yr][dataset][x][y]) )
+
     # save 3 files in s3 for each dataset for this coordinate
     for dataset in datasets :
         print(s3_client.put_object(
-            Body=json.dumps(one_coord[dataset]),
-            Bucket=narr_bucket,
-            Key=f"{dataset.lower()}/{dataset.lower()}_{x}_{y}.json"
+            Body = json.dumps(one_coord[dataset]),
+            Bucket = narr_bucket,
+            Key = narr_filename(dataset, x,y)
         ))
 
-    # before was extracting each data set, but now using dict keys
-    # print(
-    #     s3_client.put_object(
-    #         Body=json.dumps(wd_years),
-    #         Bucket=narr_bucket,
-    #         Key=f"wd/wd_{x}_{y}.json"
-    #         )
-    # )
 
+
+########## DATA READ FUNCTIONS FOR NEW STRUCTUR
 # move these to FOD program or narr python file
 def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_input_dir:str):
     """read a dataset for all years, one coordinate from s3
@@ -127,18 +126,17 @@ def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_input_dir:st
         grid_x (int): grid point
         grid_y (int): grid point
         narr_input_dir (str): directory containing NARR files
-        
+
     Returns:    
         dict[int, float]: A dictionary mapping years to the dataset values at the specified coordinate
     """
-    
-    # ts = time series
-    ts_by_year_file = f"{dataset.lower()}/{dataset.lower()}_{grid_x}_{grid_y}.json"
+
+    ts_by_year_file = narr_filename(dataset, x,y ) 
     with open(os.path.join(narr_input_dir, ts_by_year_file), 'r') as f:
         ts_by_year = json.load(f)
-        
     return ts_by_year
 
+# requires numpy
 def read_dataset_from_s3(grid_x:int, grid_y:int, dataset:str, bucket:str, s3_client:boto3.client):
     """read a dataset for all years, one coordinate from s3
 
