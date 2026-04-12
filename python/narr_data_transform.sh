@@ -5,18 +5,26 @@
 #SBATCH --mem=40G
 #SBATCH --time=03:59:00
 
-cd ~/docs/enviroweather/maaa-offset
+cd /mnt/home/billspat/docs/enviroweather/maaa_mioffset
 
 # load modules known to work
+# we don't need the R stuff but there seems to an issue finding things
 ml purge
 # loads Python 3.13, gcc 14.2, recent R
 module load R/4.5.1-gfbf-2025a virtualenv/20.29.2 powertools
+# fun with geo-spatial ecology!
+module load GEOS/3.13.1-GCC-14.2.0 GDAL/3.11.1-foss-2025a UDUNITS/2.2.28-GCCcore-14.2.0
+export R_LIBS_USER=/mnt/ffs24/home/billspat/R/x86_64-pc-linux-gnu-library/4.5
+export R_LIBS=$R_LIBS_USER
+
 # activate our environment
 source .venv/bin/activate
 
-srun python narr_data_transform.py
+# run from the script folder
+cd python
+python narr_data_transform.py
 
-
-# Print resource information
-scontrol show job $SLURM_JOB_ID
-js -j $SLURM_JOB_ID
+if [ -n "$SLURM_JOB_ID" ]; then
+  scontrol show job $SLURM_JOB_ID
+  js -j $SLURM_JOB_ID
+fi
