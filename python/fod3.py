@@ -48,7 +48,6 @@ import matplotlib.cm as cm
 from geopy import Point
 # vincenty method is deprecated, use geodesic method instead
 from geopy.distance import geodesic
-import scipy.io as sio
 import simplekml
 import shapefile
 from dotenv import load_dotenv

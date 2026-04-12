@@ -4,11 +4,16 @@ import os, sys
 import json
 
 # requirements python_dotenv, h5py, boto3, numpy
+print('importing libs')
 from dotenv import load_dotenv
 import h5py
-from aws import get_s3_client, check_bucket, aws_config
-
 import numpy as np
+
+
+print('import aws module')
+
+from aws import get_s3_client, check_bucket, get_aws_config
+
 
 print("importing fod3 file which takes forever")
 from fod3 import path_to_narrfile # read_narr_lat_lon,validate_latlon,read_one_year,read_narr_timeseries, 
@@ -62,7 +67,8 @@ for yr in years:
  
 ########## build coordinates
 # one_year = read_one_year_grid(1979, narr_input_dir=narr_input_dir)
-one_year = narr_data[years[0]]['PC']
+yr = years[0]
+one_year = narr_data[yr]['PC']
 
 grid_size_x = one_year.shape[0]
 grid_size_y = one_year.shape[1]
@@ -89,7 +95,7 @@ for coord in coords:
     
     # extract all yrs timeseries's for one coordinate per dataset
     one_coord = {'PC': {}, 'WS': {}, 'WD': {}}
-    for yr in years:
+    for yr in years[0:2]:
         print(f"\t {yr}")
         for dataset in datasets :
             one_coord[dataset][yr] = list(map(float, narr_data[yr][dataset][x][y]))        
@@ -112,12 +118,12 @@ for coord in coords:
     #         Key=f"wd/wd_{x}_{y}.json"
     #         )
     # )
-  
+
 # move these to FOD program or narr python file
 def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_input_dir:str):
     """read a dataset for all years, one coordinate from s3
 
-    Args:     
+    Args
         grid_x (int): grid point
         grid_y (int): grid point
         narr_input_dir (str): directory containing NARR files
