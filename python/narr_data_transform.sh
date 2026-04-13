@@ -1,9 +1,14 @@
 #!/bin/bash --login
 #SBATCH --job-name=ewx_narr_transform
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
-#SBATCH --mem=40G
-#SBATCH --time=03:59:00
+#SBATCH --ntasks-per-node=2
+#SBATCH --mem=4G
+#SBATCH --time=01:30:00
+#SBATCH --output=logs/narr_transform_%j.out
+#SBATCH --error=logs/narr_transform_%j.err
+#SBATCH --array=3-5
+
+# max x = 277
 
 cd /mnt/home/billspat/docs/enviroweather/maaa_mioffset
 
@@ -22,7 +27,10 @@ source .venv/bin/activate
 
 # run from the script folder
 cd python
-python narr_data_transform.py
+echo "x coordinate = $SLURM_ARRAY_TASK_ID"
+echo "----"
+python narr_data_transform.py ${SLURM_ARRAY_TASK_ID}
+echo "----"
 
 if [ -n "$SLURM_JOB_ID" ]; then
   scontrol show job $SLURM_JOB_ID
