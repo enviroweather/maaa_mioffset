@@ -56,8 +56,9 @@ def build_grid_coordinates(grided_data, grid_x:int|None=None):
 
     if grid_x:
         # x value was sent, just build for one x and all y
-        for b in  ydx:
-            coords.append( [ grid_x, b ] )
+        xdx = int(grid_x)
+        for y in  ydx:
+            coords.append( [xdx, y ] )
         
     else:
         # no x value, build whole list of coords
@@ -150,7 +151,7 @@ def transform_by_coordinate(grid_x, grid_y=None, narr_bucket=None, config=None):
                 print(f"error S3 {e} for ({x}, {y}) dataset {dataset}")
                 return False
             
-        return True
+    return True
 
 
 if __name__ == "__main__":
