@@ -1,5 +1,6 @@
 #! /usr/bin/env python3 
 
+from collections.abc import Iterable
 import os, sys
 import json
 
@@ -53,12 +54,18 @@ def build_grid_coordinates(grided_data, grid_x=None, grid_y=None):
 
 
     if grid_x:
-        xdx = list(grid_x)
+        if not isinstance(grid_x, list):
+            xdx = [grid_x]
+        else:
+            xdx = grid_x
     else:
         xdx = list(range(grid_size_x))
         
     if grid_y:
-        ydx = list(grid_y)
+        if not isinstance(grid_y, list):
+            ydx = [grid_y]
+        else:
+            ydx = grid_y
     else:
         ydx = list(range(grid_size_y))
         
