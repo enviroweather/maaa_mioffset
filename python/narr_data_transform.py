@@ -78,6 +78,15 @@ for a in xdx:
     for b in  ydx:
         coords.append( [ a, b ] )
     
+grid_checkpoint = os.getenv('GRID_CHECKPOINT')
+if grid_checkpoint:
+   try:
+       grid_checkpoint = json.loads(grid_checkpoint)
+       if  type(grid_checkpoint) == type(list()) and len(grid_checkpoint) == 2:	
+           coords = list(filter(lambda coord: coord > grid_checkpoint,  coords))
+   except Exception as e:
+      print(f"couldn't use checkpoint {grid_checkpoint} so stopping.  clear variable or fix to look like [1,2]")
+
 
 ######
 print(" main data transform loop")
