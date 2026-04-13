@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import h5py
 # this is only needed when reading data in
 #import numpy as np
-from aws import get_s3_client, check_bucket, get_aws_config
+from aws import get_s3_client, check_bucket, boto3 # get_aws_config
 from fod3 import path_to_narrfile # read_narr_lat_lon,validate_latlon,read_one_year,read_narr_timeseries, 
 
 def read_one_year_grid(yr:str,narr_input_dir:str):
@@ -114,7 +114,7 @@ def transform_by_coordinate(grid_x, grid_y=None, narr_bucket=None, config=None):
         narr_data[yr] = read_one_year_grid(yr, narr_input_dir)
  
     one_year = narr_data[years[0]]['PC']
-    coords = build_grid_coordinates(one_year)
+    coords = build_grid_coordinates(one_year,grid_x=grid_x, grid_y=grid_y)
 
     ######
     print(" main data transform loop")
@@ -176,64 +176,64 @@ if __name__ == "__main__":
     
     
 
-########## DATA READ FUNCTIONS FOR NEW STRUCTURE
-# move these to FOD program or narr python file
-def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_input_dir:str):
-    """read a dataset for all years, one coordinate from s3
+# ########## DATA READ FUNCTIONS FOR NEW STRUCTURE
+# # move these to FOD program or narr python file
+# def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_input_dir:str):
+#     """read a dataset for all years, one coordinate from s3
 
-    Args
-        grid_x (int): grid point
-        grid_y (int): grid point
-        narr_input_dir (str): directory containing NARR files
+#     Args
+#         grid_x (int): grid point
+#         grid_y (int): grid point
+#         narr_input_dir (str): directory containing NARR files
 
-    Returns:    
-        dict[int, float]: A dictionary mapping years to the dataset values at the specified coordinate
-    """
+#     Returns:    
+#         dict[int, float]: A dictionary mapping years to the dataset values at the specified coordinate
+#     """
 
-    ts_by_year_file = narr_filename(dataset, x,y ) 
-    with open(os.path.join(narr_input_dir, ts_by_year_file), 'r') as f:
-        ts_by_year = json.load(f)
-    return ts_by_year
+#     ts_by_year_file = narr_filename(dataset, x,y ) 
+#     with open(os.path.join(narr_input_dir, ts_by_year_file), 'r') as f:
+#         ts_by_year = json.load(f)
+#     return ts_by_year
 
-# requires numpy
-def read_dataset_from_s3(grid_x:int, grid_y:int, dataset:str, bucket:str, s3_client:boto3.client):
-    """read a dataset for all years, one coordinate from s3
+# # requires numpy
+# def read_dataset_from_s3(grid_x:int, grid_y:int, dataset:str, bucket:str, s3_client:boto3.client):
+#     """read a dataset for all years, one coordinate from s3
 
-    Args:     
-        grid_x (int): grid point
-        grid_y (int): grid point
-        dataset (str): dataset name (PC, WS, WD)
-        bucket (str): name of bucket to read from
-        s3_client (boto3.client): s3 client created from a valid session
+#     Args:     
+#         grid_x (int): grid point
+#         grid_y (int): grid point
+#         dataset (str): dataset name (PC, WS, WD)
+#         bucket (str): name of bucket to read from
+#         s3_client (boto3.client): s3 client created from a valid session
 
-    Returns:    
-        dict[int, float]: A dictionary mapping years to the dataset values at the specified coordinate
-    """
+#     Returns:    
+#         dict[int, float]: A dictionary mapping years to the dataset values at the specified coordinate
+#     """
     
-    # ts = time series
-    ts_by_year_file = f"{dataset.lower()}/{dataset.lower()}_{grid_x}_{grid_y}.json"
-    response = s3_client.get_object(Bucket=bucket, Key=ts_by_year_file)
-    ts_by_year = response['Body'].read()
-    ts_by_year = json.loads(ts_by_year)
-    return ts_by_year
+#     # ts = time series
+#     ts_by_year_file = f"{dataset.lower()}/{dataset.lower()}_{grid_x}_{grid_y}.json"
+#     response = s3_client.get_object(Bucket=bucket, Key=ts_by_year_file)
+#     ts_by_year = response['Body'].read()
+#     ts_by_year = json.loads(ts_by_year)
+#     return ts_by_year
 
 
-# requires numpy
-def prep_dataset_for_fod(ts_by_year: dict[int, float]):
-    """convert dictionary of timeserize by year into single
-    np array with them all smashed together
+# # requires numpy
+# def prep_dataset_for_fod(ts_by_year: dict[int, float]):
+#     """convert dictionary of timeserize by year into single
+#     np array with them all smashed together
 
-    Args:
-        ts_by_year (dict[int, float]): dictionary of time series keyed by year
+#     Args:
+#         ts_by_year (dict[int, float]): dictionary of time series keyed by year
 
-    Returns:
-        np.array: time series of floats as expected by FOD 
-    """
+#     Returns:
+#         np.array: time series of floats as expected by FOD 
+#     """
     
-    if 'numpy' not in sys.modules:
-        import numpy as np
+#     if 'numpy' not in sys.modules:
+#         import numpy as np
         
-    ts_by_year_nparray = list(map(np.array, list(ts_by_year.values())))
-    ts_by_year_merged = np.array(np.concatenate(ts_by_year_nparray))
-    return ts_by_year_merged
+#     ts_by_year_nparray = list(map(np.array, list(ts_by_year.values())))
+#     ts_by_year_merged = np.array(np.concatenate(ts_by_year_nparray))
+#     return ts_by_year_merged
 
