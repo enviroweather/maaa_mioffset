@@ -8,6 +8,7 @@ python/__pycache__
 .venv/
 output/*
 tmp/*
+logs/*
 
 # ide stuff
 settings.json

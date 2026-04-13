@@ -2,11 +2,11 @@
 #SBATCH --job-name=ewx_narr_transform
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=2
-#SBATCH --mem=4G
-#SBATCH --time=01:30:00
+#SBATCH --mem=1G
+#SBATCH --time=01:45:00
 #SBATCH --output=logs/narr_transform_%j.out
 #SBATCH --error=logs/narr_transform_%j.err
-#SBATCH --array=3-5
+#SBATCH --array=6-277
 
 # max x = 277
 
