@@ -1,6 +1,5 @@
 #! /usr/bin/env python3 
 
-from collections.abc import Iterable
 import os, sys
 import json
 
@@ -29,7 +28,7 @@ def read_one_year_grid(yr:str,narr_input_dir:str):
     return(h5f)
 
 
-def build_grid_coordinates(grided_data, grid_x=None, grid_y=None):
+def build_grid_coordinates(grided_data, grid_x:int|None=None):
     """create a list of 2D coordinate tuples (x,y) given a grid file
     
 
@@ -51,30 +50,21 @@ def build_grid_coordinates(grided_data, grid_x=None, grid_y=None):
     # one_year = narr_data[years[0]]['PC']
     grid_size_x = grided_data.shape[0]
     grid_size_y = grided_data.shape[1]
-
+    xdx = list(range(grid_size_x))
+    ydx = list(range(grid_size_y))
+    coords = []
 
     if grid_x:
-        if not isinstance(grid_x, list):
-            xdx = [grid_x]
-        else:
-            xdx = grid_x
-    else:
-        xdx = list(range(grid_size_x))
-        
-    if grid_y:
-        if not isinstance(grid_y, list):
-            ydx = [grid_y]
-        else:
-            ydx = grid_y
-    else:
-        ydx = list(range(grid_size_y))
-        
-    # loop to build list of tuples from cartesian product 
-    coords = []
-    for a in xdx:
+        # x value was sent, just build for one x and all y
         for b in  ydx:
-            coords.append( ( a, b ) )
-    
+            coords.append( [ grid_x, b ] )
+        
+    else:
+        # no x value, build whole list of coords
+        for a in xdx:
+            for b in  ydx:
+                coords.append( [ a, b ] )
+        
     return(coords)
             
             
@@ -121,7 +111,7 @@ def transform_by_coordinate(grid_x, grid_y=None, narr_bucket=None, config=None):
         narr_data[yr] = read_one_year_grid(yr, narr_input_dir)
  
     one_year = narr_data[years[0]]['PC']
-    coords = build_grid_coordinates(one_year,grid_x=grid_x, grid_y=grid_y)
+    coords = build_grid_coordinates(one_year,grid_x=grid_x)
 
     ######
     print(" main data transform loop")
