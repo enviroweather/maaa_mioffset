@@ -2,8 +2,9 @@
 **/.env
 
 .DS_Store
-python/__pycache__
+fod/__pycache__
 **/__pycache__
+**/.pytest_cache
 
 .venv/
 output/*
