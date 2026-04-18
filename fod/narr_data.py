@@ -133,7 +133,25 @@ def path_to_narrfile(yr:int, narr_input_dir:str)->str:
     h5f_annual_filename = os.path.join(narr_input_dir, narr_file_name)
     return(h5f_annual_filename)
 
+# read one year WHOLE grid
+def read_one_year_grid(yr:str,narr_input_dir:str):
+    """read one year hf5 file, extra 3 datasets, return whole grid
+    Files must be named like narr_PSD_1980_BC.h5
+    
+    Args:
+        yr (int): year of data to read, embedded in filename
+        narr_input_dir (str): path to NARR input files
+    Returns:
+        tuple of np arrays: timeseries values for PC, WD and WS 
+    """
+    
+    h5f_annual_filename = path_to_narrfile(yr, narr_input_dir)
+    h5f = h5py.File(h5f_annual_filename, 'r')
+    return(h5f)
+
+
 # called before and inside the loop by years
+# this returns one grid coordinate
 def read_one_year(yr:int,idy: int, idx: int, narr_input_dir:str):
     """read one year hf5 file, extra 3 datasets and filter just one coordinate
     Files must be named like narr_PSD_1980_BC.h5

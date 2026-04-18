@@ -5,39 +5,18 @@ import json
 
 # requirements python_dotenv, h5py, boto3, optional numpy
 from dotenv import load_dotenv
-import h5py
-# this is only needed when reading data in
-#import numpy as np
 from aws import get_s3_client, check_bucket, boto3 # get_aws_config
-from fod3 import path_to_narrfile # read_narr_lat_lon,validate_latlon,read_one_year,read_narr_timeseries, 
-
-def read_one_year_grid(yr:str,narr_input_dir:str):
-    """read one year hf5 file, extra 3 datasets
-    return whole grid
-    Files must be named like narr_PSD_1980_BC.h5
-    
-    Args:
-        yr (int): year of data to read, embedded in filename
-        narr_input_dir (str): path to NARR input files
-    Returns:
-        tuple of np arrays: timeseries values for PC, WD and WS 
-    """
-    
-    h5f_annual_filename = path_to_narrfile(yr, narr_input_dir)
-    h5f = h5py.File(h5f_annual_filename, 'r')
-    return(h5f)
+from narr_data import read_one_year_grid, path_to_narrfile, narr_filename
 
 
-def build_grid_coordinates(grided_data, grid_x:int|None=None):
+def build_grid_coordinates_by_x(grided_data, grid_x:int|None=None):
     """create a list of 2D coordinate tuples (x,y) given a grid file
     
-
     Args:
         grided_data (_type_): grid hd5 file with x and y as first two elements
         
         grid_x (int or list, optional): either a single int or a list of ints that
         will be used for the x-coordinates for creating a subset of the list. Defaults to None which means use whole grid
-        grid_y (int or list, optional): either a single int or a list of ints that
         will be used for the y-coordinates for creating a subset of the list. Defaults to None which means use whole grid   
     """
     
@@ -68,17 +47,8 @@ def build_grid_coordinates(grided_data, grid_x:int|None=None):
         
     return(coords)
             
-            
 
-def narr_filename(dataset:str, x:int,y:int ):
-    """
-    helper function for standard naming of a narr file for one coordinate and all years
-    """
-    one_coord_filename=f"{dataset.lower()}/{dataset.lower()}_{x:03}_{y:03}.json"
-    return(one_coord_filename)
-
-
-def transform_by_coordinate(grid_x, grid_y=None, narr_bucket=None, config=None):
+def transform_by_coordinate(grid_x, narr_bucket, narr_input_dir):
 
     load_dotenv()
     
@@ -86,33 +56,19 @@ def transform_by_coordinate(grid_x, grid_y=None, narr_bucket=None, config=None):
     
     s3_client = get_s3_client()  # use default dot-env
     
-    # check that the bucket is in there
-    if not narr_bucket:
-        narr_bucket = os.getenv('BUCKET_NAME')
-    if not check_bucket(s3_client, narr_bucket):
-        sys.exit(1)
- 
     # constants
     years = list(range(1979, 2009))
     datasets = ['PC', 'WS', 'WD']
-    
-
-    ## set up narr files
-    narr_input_dir = h5folder = os.getenv('NARR_INPUT_DIR')
-    if not os.path.exists(path_to_narrfile(2001, narr_input_dir)):
-        print("can't access NARR files")
-        sys.exit(1)
-    
 
     ##########
     print("reading narr data")
     narr_data = {}
     for yr in years:
         print(yr)
-        narr_data[yr] = read_one_year_grid(yr, narr_input_dir)
+        narr_data[yr] = read_one_year_grid(str(yr), narr_input_dir)
  
     one_year = narr_data[years[0]]['PC']
-    coords = build_grid_coordinates(one_year,grid_x=grid_x)
+    coords = build_grid_coordinates_by_x(one_year,grid_x=grid_x)
 
     ######
     print(" main data transform loop")
@@ -166,8 +122,25 @@ if __name__ == "__main__":
         x_coordinate = float(sys.argv[1])
     else:
         x_coordinate = None
+        
+    ## set up narr files
+    narr_input_dir:str = os.getenv('NARR_INPUT_DIR', "")
+    if not os.path.exists(path_to_narrfile(2001, narr_input_dir)):
+        print("can't access NARR files")
+        sys.exit(1)
     
-    result = transform_by_coordinate(grid_x = x_coordinate, narr_bucket=os.getenv('BUCKET_NAME'))
+    narr_bucket=os.getenv('BUCKET_NAME', "")
+    
+    s3_client = get_s3_client()  # use default dot-env
+    
+    # check that the bucket is in there
+    if not narr_bucket:
+        narr_bucket = os.getenv('BUCKET_NAME')
+    if not check_bucket(s3_client, narr_bucket):
+        Warning(f"Bucket not found or accessible: {narr_bucket}")
+        sys.exit(1)
+    
+    result = transform_by_coordinate(grid_x = x_coordinate, narr_bucket=narr_bucket, narr_input_dir=narr_input_dir)
     if not result:
         print(f"ERROR x = {x_coordinate}")
         sys.exit(1)
