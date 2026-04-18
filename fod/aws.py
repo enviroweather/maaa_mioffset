@@ -1,7 +1,9 @@
 # reload .env file to accommodate changes during development
 from dotenv import load_dotenv
-import boto3
 from os import getenv
+# aws 
+import boto3
+from botocore.exceptions import ClientError
 
 def get_aws_config(dotenv_file = None):
     
@@ -26,7 +28,7 @@ def get_aws_config(dotenv_file = None):
     return aws_config
 
 
-def get_s3_client(aws_config = None):
+def get_s3_client(aws_config = None)->boto3.client:
     if aws_config is None:
         aws_config = get_aws_config()
     session = boto3.Session(**aws_config)
@@ -34,12 +36,13 @@ def get_s3_client(aws_config = None):
     return(s3_client)
 
 
-def check_bucket(s3_client, bucket_name):
+def check_bucket(s3_client:boto3.client, bucket_name):
+    
     try:
         s3_client.head_bucket(Bucket=bucket_name)
         print(f"Bucket {bucket_name} exists")
-        return(True)
-    except s3_client.exceptions.NoSuchBucket:
-        print(f"Bucket {bucket_name} does not exist")
-        return(False)
+        return True
+    except ClientError:
+        print(f"Bucket {bucket_name} does not exist or is not accessible")
+        return False
         

@@ -35,6 +35,8 @@ print("MIOFFSET DEVELOPMENT VERSION ONLY - NOT FOR PRODUCTION USE")
 # #------------------------Imports-------------------------
 
 import numpy as np
+# import numpy.typing as npt
+# from numpy.typing import NDArray
 import math
 import h5py
 import sys, os
@@ -51,6 +53,8 @@ from geopy.distance import geodesic
 import simplekml
 import shapefile
 from dotenv import load_dotenv
+
+from narr_data import read_narr_timeseries_h5, read_narr_timeseries_s3, filter_narr_timeseries
 
 DEBUG=os.getenv('DEBUG', True)
 
@@ -70,11 +74,6 @@ def add_prefix_to_filename(full_path: str, prefix: str = "", prefix_sep: str = "
         return os.path.join(dir_name, prefixed_name)
     return prefixed_name
 
-#------------------------ Config -------------------------
-
-# just read in all config, it's our file
-# TODO, after script is working, convert explicit import 
-from fod_config import *
 
 # note that these don't appear to be used in this 
 # but are perhaps used in the FE to calculate odor_index
@@ -91,148 +90,6 @@ from fod_config import *
 # wind_speed: W? season
 #------------------------------------------------------------------------
 
-
-######### DATA READING
-
-def read_narr_lat_lon( narr_file:str = None):
-    """read in lat,lon for converting lat lon to climatology grid indices
-
-    Args:
-        narr_file (str): string full path to the NARR input file. 
-            Defaults to NARR_INPUT.
-    """
-    if narr_file is None:
-        narr_file = os.getenv('NARR_INPUT')
-    
-    if not os.path.exists(narr_file):
-        Warning("NARR file not found.")
-        return None, None
-    
-    with h5py.File(narr_file,'r') as hf:
-        data = hf.get('LAT')
-        LAT = np.array(data)
-        data = hf.get('LON')
-        LON = np.array(data)
-
-    return(LAT, LON)
-        
-
-def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarray) -> bool:
-    """determine latitude, longitude params are withing boundary
-
-    Args:
-        latval (float): latitude value
-        lonval (float): longitude value 
-        LAT (np.ndarray): latitude grid
-        LON (np.ndarray): longitude grid
-    """
-    
-    if((latval <np.min(np.min(LAT))) or ( latval > np.max(np.max(LAT))) \
-    or (lonval < np.min(np.min(LON))) or (lonval > np.max(np.max(LON)))):
-        return(False)
-    
-    return(True)
-
-
-def path_to_narrfile(yr:int, narr_input_dir):
-    """
-    very simple helper to create path to narr file by year
-    for use in different parts of the program or for file mgmt
-    """
-
-    narr_file_name = f"narr_PSD_{yr}_BC.h5"
-    h5f_annual_filename = os.path.join(narr_input_dir, narr_file_name)
-    return(h5f_annual_filename)
-
-
-# called before and inside the loop by years
-def read_one_year(yr:str,idy: int, idx: int, narr_input_dir:str):
-    """read one year hf5 file, extra 3 datasets and filter just one coordinate
-    Files must be named like narr_PSD_1980_BC.h5
-    
-    Args:
-        yr (int): year of data to read, embedded in filename
-        idy (int): index of grid y coordinate (North/South)
-        idx (int): index of grid x coordinate (East/West)
-        narr_input_dir (str): path to NARR input files
-    Returns:
-        tuple of np arrays: timeseries values for PC, WD and WS from one grid point, all hours
-    """
-    
-    h5f_annual_filename = path_to_narrfile(yr, narr_input_dir  ) 
-
-    h5f = h5py.File(h5f_annual_filename, 'r')
-    # extract all values for one year
-    # previously filtered at read time, like
-    #  pc_1year = h5f['pc'][idy,idx,ts:te]
-    pc_1year = h5f['PC'][idy,idx,]
-    ws_1year = h5f['WS'][idy,idx,]
-    wd_1year = h5f['WD'][idy,idx,]
-    return pc_1year, ws_1year, wd_1year
-
-
-def read_narr_timeseries(latval: float, lonval: float,narr_input_dir:str, narr_file:str):
-    """read in wind data for all available years 
-
-    Args:
-        latval (float): _description_
-        lonval (float): _description_
-        narr_input_dir (str, optional): _description_. Defaults to narr_input_dir.
-        narr_file (str, optional): _description_. Defaults to NARR_INPUT.
-
-    Raises:
-        ValueError: _description_
-    """
-
-    # get coordinate to grid index map arrays
-    LAT, LON = read_narr_lat_lon(narr_file)
-    
-    if not validate_latlon(latval, lonval, LAT, LON):
-        raise ValueError("Location outside the NARR domain.")
-    
-    # get grid index point for closest grid point using simplified euclidean dist
-    distance:np.ndarray = (LAT-latval)**2 + (LON-lonval)**2
-    # if input lat and/or lon are equidistant from grid point, this defaults
-    # to the most SW corner (I think )
-    idy_array, idx_array = np.where(distance==distance.min()) # tuple of arrays
-    idy:int=int(idy_array[0])
-    idx:int=int(idx_array[0]) # pick first element of arrays
-    
-    # move this to a parameter if data is updated
-    available_years = list(range(1979,2009,1))
-   
-    # note on variable names:I don't know what "PC" stands for so made is pc 
-    # since all caps vars are for constants
-  
-    # start the time series arrays by reading the first year, removing it from the list
-    pc, wind_speed, wind_direction = read_one_year(yr=available_years.pop(0), idx=idx, idy=idy, narr_input_dir=narr_input_dir)
-    
-    for yr in available_years:
-        pc_1year, ws_1year, wd_1year = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_dir= narr_input_dir)
-        # note on py2 to 3 conversion: 
-        # it was axis=1 in original script but that doesn't work on 1-d arrays
-        # axis=0 combines row-wise for 1-d array, which following code uses
-        pc=np.concatenate((pc,pc_1year),axis=0)
-        wind_speed=np.concatenate((wind_speed,ws_1year),axis=0)
-        wind_direction=np.concatenate((wind_direction,wd_1year),axis=0)
-                
-    return(pc, wind_speed, wind_direction)
-    
-    
-def filter_narr_timeseries(pc, ws, wd, ts:int=0, te:int=2920):
-    """filter NARR timeseries data
-
-    Args:
-        pc (np.ndarray): Pressure data
-        ws (np.ndarray): Wind speed data
-        wd (np.ndarray): Wind direction data
-        ts (int): time start index default=0, start of data
-        te (int): time endindex, default 2920, all data
-
-    Returns:
-        tuple: Filtered data (pc, ws, wd).  If using default ts,te, return all data
-    """
-    return pc[ts:te], ws[ts:te], wd[ts:te]
 
 
 ####### VISUALIZATIONS ##########
@@ -533,7 +390,7 @@ def write_zipfile(zipfile_path: str, zip_files: list[str]):
 
 ###### MAIN MODEL 
         
-def fod_model(pc:np.array, wind_speed:np.array, wind_direction:np.array, odor_index:int):
+def fod_model(pc: np.ndarray, wind_speed:np.ndarray, wind_direction:np.ndarray, odor_index:int):
     """calculates an aray of setback distances in miles given wind
     characterists for a coordinate in the state of Michigan 
 
@@ -686,7 +543,7 @@ def fod_model(pc:np.array, wind_speed:np.array, wind_direction:np.array, odor_in
     return(D) 
       
      
-def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_file:str, narr_input_dir:str):
+def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_file:str, narr_input_dir:str, narr_data_location:str="S3"):
     """coordinate the run of the FOD model and call functions to save various outputs
 
     Args:
@@ -713,8 +570,23 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         tfs=1;tfe=1				
 
     # read in wind data for coordinates
-    pc, wind_speed, wind_direction = read_narr_timeseries(latval, lonval,narr_input_dir, narr_file)
-    # latval=latval, lonval=lonval, narr_input_dir=narr_input_dir, narr_file=narr_file) 
+    # S3 version returns a dict
+    # 'narr_input_dir' is a bucket name for s3 version
+    # TODO parameterize s3 vs h5 versions for comparison
+    
+    
+
+    # defaults to S3 since HDF5 takes significant disk space and downloads
+
+    if narr_data_location == "H5":
+        ts:dict[str, np.ndarray] = read_narr_timeseries_h5(latval, lonval,narr_input_dir, narr_file)    
+    else:
+        # default S3
+        ts:dict[str, np.ndarray] = read_narr_timeseries_s3(latval, lonval,narr_input_dir, narr_file)
+        
+    pc: np.ndarray = ts['pc']
+    wind_speed: np.ndarray = ts['ws']
+    wind_direction: np.ndarray = ts['wd']
     
     # this runs once for flags F and W and twice for B
     for topt in range(tfs,tfe+1):
@@ -727,9 +599,8 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
             # Recall that Xindi's data omits leap days.  So each year
             # contains the same number of hours.
             ts,te=(720,2432)
+            pc, wind_speed, wind_direction = filter_narr_timeseries(pc, wind_speed, wind_direction, ts, te)
         
-        # filter, mostly for option 2
-        pc, wind_speed, wind_direction = filter_narr_timeseries(pc, wind_speed, wind_direction, ts, te)
         
         # run model        
         D = fod_model(pc=pc, wind_speed=wind_speed, wind_direction=wind_direction, odor_index=odor_index)
@@ -741,9 +612,12 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
 
         #---------Print formatted table to text file--------        
         if(topt == 1):            
-            text_file_name = 'table_setbackdistance_FY.txt'            
+            text_file_name:str = 'table_setbackdistance_FY.txt'            
         elif(topt == 2):
-            text_file_name = 'table_setbackdistance_WS.txt'         
+            text_file_name:str = 'table_setbackdistance_WS.txt' 
+        else:
+            text_file_name:str = 'table_setbackdistance.txt'
+        
             
         text_file_name = add_prefix_to_filename(
             os.path.join(output_offset_dir, text_file_name), file_prefix)
@@ -766,10 +640,10 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         
         
         #-----------Generate KML file with footprints drawn as polygons----------
-        if(topt == 1):
-            file_name = "kml_footprint_FY.kml"
-        elif(topt == 2):
+        if(topt == 2):
             file_name = "kml_footprint_WS.kml" 
+        else:
+            file_name = "kml_footprint_FY.kml"
             
         kml_file_name = add_prefix_to_filename(os.path.join(output_offset_dir, file_name), file_prefix)
         write_kml(LL, E, latval, lonval, kml_file_name)
@@ -815,14 +689,31 @@ if __name__ == "__main__":
 
     latval = float(sys.argv[1])
     lonval = float(sys.argv[2])
-    odor_index = float(sys.argv[3])
+    odor_index = int(float(sys.argv[3]))
     file_prefix = sys.argv[4]
+    narr_data_location:str = sys.argv[5] if len(sys.argv) > 5 else os.getenv("NARR_DATA_LOCATION", "S3")
     
     # raises exception if location is outside the NARR domain
     # gather additional params from "config" python script
     load_dotenv()
-    time_flag = os.getenv("TIME_FLAG")
+    time_flag = os.getenv("TIME_FLAG", "F")
     output_offset_dir=os.getenv("OUTPUT_OFFSET_DIR")
+    if not output_offset_dir:
+        raise ValueError("OUTPUT_OFFSET_DIR environment variable is not set")
+    
     narr_file=os.getenv("NARR_INPUT")
-    narr_input_dir=os.getenv("NARR_INPUT_DIR")
-    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_file=narr_file, narr_input_dir=narr_input_dir)
+    if not narr_file:
+        raise ValueError("NARR_INPUT environment variable is not set")
+    
+    # this reduces the number of params but re-using the "narr_input_dir" as 
+    # either the folder where the H5 files are the bucket name
+    # instead create two versions of "fod" since the env vars are very different
+    if narr_data_location=="S3":
+        narr_input_dir = os.getenv("NARR_BUCKET")
+    else:
+        narr_input_dir = os.getenv("NARR_INPUT_DIR")
+        
+    if not narr_input_dir:
+        raise ValueError("NARR_INPUT_DIR or NARR_BUCKET environment variable is not set")
+        
+    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_file=narr_file, narr_input_dir=narr_input_dir, narr_data_location=narr_data_location)
