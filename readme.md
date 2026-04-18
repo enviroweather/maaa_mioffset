@@ -21,7 +21,7 @@ existing climatological dataset of wind and atmospheric stability.
 
 Technical details of the model are available in PDF format: [MIOFFSET2018_technicaldocument.pdf](doc/MIOFFSET2018_technicaldocument.pdf)
 
-Documentation for installing and using the Python version of the model, see [python/readme.md](python/readme.md)
+Documentation for installing and using the Python version of the model, see [fod/readme.md](fod/readme.md)
 
 MI OFFSET 2018 has been implemented in the <a href='https://www.michigan.gov/mdard/0,4610,7-125-1599_1605---,00.html'>Site Selection Generally Accepted Agricultural and Management Practices (GAAMPs) document.</a> 
 
