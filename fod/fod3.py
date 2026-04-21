@@ -34,6 +34,8 @@ print("MIOFFSET DEVELOPMENT VERSION ONLY - NOT FOR PRODUCTION USE")
 
 # #------------------------Imports-------------------------
 
+import json
+
 import numpy as np
 # import numpy.typing as npt
 # from numpy.typing import NDArray
@@ -225,8 +227,55 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
     return(footprints_plot_file_path, five_percent_plot_file_path)
 
 
+def setback_text_table(D: np.ndarray)->str:
+    """ create Special special version of D array, with three "N" rows at top of table and other 
+    two "N" rows at bottom of table.  This is done in order to match how it 
+    is presented in existing MI Odor Print excel spreadsheet.
+    
+    Args:
+        D (np.ndarray): offset values, must have shape 80,3
+    
+    Returns:
+        str: lines of table suitable for printing in fixed width font
+    """
+    
+    wlab=np.array(
+       ['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
+	    'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
+	    'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
+	    'SSW','-','-','-','-','SW','-','-','-','-','WSW','-','-','-','-', \
+	    'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
+	    'NNW','-','-','-','-']
+                  )
+    
+    # Special special version of D array, with three "N" rows at top of table and other 
+    # two "N" rows at bottom of table.  This is done in order to match how it 
+    # is presented in existing MI Odor Print excel spreadsheet.
+    Dtbl=np.copy(D)
+    Dtbl[1:79,:]=D[0:78,:]
+    Dtbl[0]=D[79,:]
+    
+    # round to 2 places
+    d5 = np.round(Dtbl[:,0],2)   # 5%
+    d3 = np.round(Dtbl[:,1],2)   # 3%
+    d15 = np.round(Dtbl[:,2],2)  # 1.5%
+    
+    header_lines = [
+        f"{'Toward Distance_in_Miles':>6}",
+        f"{'       5%   3%   1.5%':>21}",
+    ]
+    
+    table_lines = [
+        f"{label:>6s} {v5:4.2f} {v3:4.2f} {v15:4.2f}"
+        for label, v5, v3, v15 in zip(wlab, d5, d3, d15)
+    ]
+    
+    table_text = "\n".join(header_lines + table_lines) + "\n"
+    
+    return(table_text)
 
-def write_setback_text_table(text_file_name: str, D: np.ndarray):
+
+def write_setback_text_table(text_file_name: str, table_text: str):# D: np.ndarray):
     """write text file of set-back distances in tabular form by direction
 
     Args:
@@ -236,33 +285,6 @@ def write_setback_text_table(text_file_name: str, D: np.ndarray):
     Returns:
         str: file name that was saved
     """ 
-    
-    wlab=np.array(['N','-','-','-','-','NNE','-','-','-','-','NE','-','-','-','-', \
-    'ENE','-','-','-','-','E','-','-','-','-','ESE','-','-','-','-', \
-    'SE','-','-','-','-','SSE','-','-','-','-','S','-','-','-','-', \
-    'SSW','-','-','-','-','SW','-','-','-','-','wind_speedW','-','-','-','-', \
-    'W','-','-','-','-','WNW','-','-','-','-','NW','-','-','-','-', \
-    'NNW','-','-','-','-'])
-
-    # Special special version of D array, with three "N" rows at top of table and other 
-    # two "N" rows at bottom of table.  This is done in order to match how it 
-    # is presented in existing MI Odor Print excel spreadsheet.
-    Dtbl=np.copy(D)
-    Dtbl[1:79,:]=D[0:78,:]
-    Dtbl[0]=D[79,:]
-    d5 = np.round(Dtbl[:,0],2)
-    d3 = np.round(Dtbl[:,1],2)
-    d15 = np.round(Dtbl[:,2],2)
-
-    header_lines = [
-        f"{'Toward Distance_in_Miles':>6}",
-        f"{'       5%   3%   1.5%':>21}",
-    ]
-    table_lines = [
-        f"{label:>6s} {v5:4.2f} {v3:4.2f} {v15:4.2f}"
-        for label, v5, v3, v15 in zip(wlab, d5, d3, d15)
-    ]
-    table_text = "\n".join(header_lines + table_lines) + "\n"
 
     with open(text_file_name, 'wt') as f_handle:
         f_handle.write(table_text)
@@ -402,6 +424,8 @@ def fod_model(pc: np.ndarray, wind_speed:np.ndarray, wind_direction:np.ndarray, 
         wind_speed (np.ndarray): time series of wind speeds
         wind_direction (np.ndarray): time series of wind directions
         topt (int, optional): time options   Defaults to 1.
+    Returns:
+        np.array 3 sets of 80 values (shape = (80,3)), 5% 3%, 1.5% setback distance
     """
 
     # see variable list in comments above
@@ -541,8 +565,36 @@ def fod_model(pc: np.ndarray, wind_speed:np.ndarray, wind_direction:np.ndarray, 
                 D[d,p]=0.0101*math.pow(E,0.6264) # Class 6  
                 
     return(D) 
-      
-     
+
+def fod2dict(D:np.ndarray)->dict[str, list[float]]:
+    """convert output of FOD model from Numpy array to python dict, one
+    for each column.  This is to help convert to JSON to return via an API
+
+    Args:
+        D (np.ndarray): output from fod_model, 80 rows, 2 columns
+
+    Returns:
+        dict[str, list[float]]: same date, but one key for each column, keys named by what they are
+    """
+    return {'5percent':D[:,0].tolist(), '3percent':D[:,1].tolist(), '1.5percent':D[:,2].tolist()}
+
+
+def fod2json(D:np.ndarray)->str:
+    """convert output of FOD model from Numpy array to JSON string
+
+    Args:
+        D (np.ndarray): output from fod_model, 80 rows, 2 columns
+
+    Returns:
+        str: JSON string containing the data
+    """
+
+    D_dict = fod2dict(D)
+    D_json = json.dumps(D_dict)
+    
+    return D_json
+
+
 def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_file:str, narr_input_dir:str, narr_data_location:str="S3"):
     """coordinate the run of the FOD model and call functions to save various outputs
 
@@ -622,7 +674,9 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         text_file_name = add_prefix_to_filename(
             os.path.join(output_offset_dir, text_file_name), file_prefix)
         
-        write_setback_text_table(text_file_name=text_file_name, D=D)
+        table_text = setback_text_table(D)
+        write_setback_text_table(text_file_name=text_file_name, table_text=table_text)
+        return text_file_name
 
         
         # make a Lat/Lon array, used by both KML and shape file writers
