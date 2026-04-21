@@ -6,7 +6,7 @@ import json
 # requirements python_dotenv, h5py, boto3, optional numpy
 from dotenv import load_dotenv
 from aws import get_s3_client, check_bucket, boto3 # get_aws_config
-from narr_data import read_one_year_grid, path_to_narrfile, narr_filename
+from narr_data import read_one_year_grid, path_to_h5_narrfile, narr_filename
 
 
 def build_grid_coordinates_by_x(grided_data, grid_x:int|None=None):
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         
     ## set up narr files
     narr_input_dir:str = os.getenv('NARR_INPUT_DIR', "")
-    if not os.path.exists(path_to_narrfile(2001, narr_input_dir)):
+    if not os.path.exists(path_to_h5_narrfile(2001, narr_input_dir)):
         print("can't access NARR files")
         sys.exit(1)
     

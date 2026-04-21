@@ -85,15 +85,15 @@ class TestNarrFilename:
 
 class TestPathToNarrfile:
     def test_contains_year(self):
-        path = path_to_narrfile(1999, "/data/h5")
+        path = path_to_h5_narrfile(1999, "/data/h5")
         assert "1999" in path
 
     def test_contains_dir(self):
-        path = path_to_narrfile(2008, "/some/dir")
+        path = path_to_h5_narrfile(2008, "/some/dir")
         assert path.startswith("/some/dir")
 
     def test_filename_pattern(self):
-        path = path_to_narrfile(1979, "/data")
+        path = path_to_h5_narrfile(1979, "/data")
         assert path.endswith("narr_PSD_1979_BC.h5")
 
 

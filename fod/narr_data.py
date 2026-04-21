@@ -21,10 +21,28 @@ import h5py
 import os, json
 from dotenv import load_dotenv
 from aws import get_s3_client
+
+
+# the original HDF5 files each had 3 datasets or types of date
+# for the timeseries at each gridpoint: PC = ? WS=Windspeed and WD=Wind Direction
+#TODO make these upper case to match original HDF5 datasets
+# but ensure that will work throughout the code
+DATASETS = ['pc', 'ws', 'wd']
+
 # ws, 10, 120
-def narr_filename(dataset:str, x:int,y:int ):
+def narr_filename(dataset:str, x:int,y:int )->str:
     """
-    helper function for standard naming of a narr file for one coordinate and all years
+    helper function for standard naming of the JSON formatted narr file 
+    for one coordinate and all years.  The file always has a folder prepending it
+    (w.g. pc/pc_001_002.json) for more efficient access on S3
+    
+    
+    Args:
+        dataset (str): The specific dataset name, upper or lower case (PC, WS, WD)
+        x (int): The x-coordinate
+        y (int): The y-coordinate
+    Returns:
+        str: The filename for the JSON formatted narr file
     """
     one_coord_filename=f"{dataset.lower()}/{dataset.lower()}_{x:03}_{y:03}.json"
     return(one_coord_filename)
@@ -115,7 +133,7 @@ def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarr
     
     return(True)
 
-def path_to_narrfile(yr:int, narr_input_dir:str)->str:
+def path_to_h5_narrfile(yr:str|int, narr_input_dir:str)->str:
     """
     very simple helper to create path to narr file by year
     for use in different parts of the program or for file mgmt
@@ -128,13 +146,13 @@ def path_to_narrfile(yr:int, narr_input_dir:str)->str:
         str: Path to the NARR file for the specified year.
 
     """
-
+    
     narr_file_name = f"narr_PSD_{yr}_BC.h5"
     h5f_annual_filename = os.path.join(narr_input_dir, narr_file_name)
     return(h5f_annual_filename)
 
 # read one year WHOLE grid
-def read_one_year_grid(yr:str,narr_input_dir:str):
+def read_one_year_grid(yr:str|int,narr_input_dir:str):
     """read one year hf5 file, extra 3 datasets, return whole grid
     Files must be named like narr_PSD_1980_BC.h5
     
@@ -145,7 +163,8 @@ def read_one_year_grid(yr:str,narr_input_dir:str):
         tuple of np arrays: timeseries values for PC, WD and WS 
     """
     
-    h5f_annual_filename = path_to_narrfile(yr, narr_input_dir)
+    yr = str(yr)
+    h5f_annual_filename = path_to_h5_narrfile(yr, narr_input_dir)
     h5f = h5py.File(h5f_annual_filename, 'r')
     return(h5f)
 
@@ -165,8 +184,10 @@ def read_one_year(yr:int,idy: int, idx: int, narr_input_dir:str):
         tuple of np arrays: timeseries values for PC, WD and WS from one grid point, all hours
     """
     
-    h5f_annual_filename = path_to_narrfile(yr, narr_input_dir  ) 
 
+    h5f_annual_filename = path_to_h5_narrfile(yr, narr_input_dir  ) 
+    
+    # TODO rew-write this to use 
     h5f = h5py.File(h5f_annual_filename, 'r')
     # extract all values for one year
     # previously filtered at read time, like
@@ -239,12 +260,42 @@ def get_narr_timeseries_s3(latval: float, lonval: float, narr_bucket:str|None = 
         raise ValueError("Grid coordinates could not be determined. Invalid lat/lon.")
     
     narr_timeseries = {}
-    for dataset in ['pc', 'ws', 'wd']:
+    for dataset in DATASETS:
          narr_timeseries[dataset]=  read_dataset_from_s3(grid_x, grid_y, dataset, bucket= narr_bucket, s3_client= s3_client)
 
     return(narr_timeseries)
 
 
+def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_file:str, local_filefolder:str)->dict[str, str]:
+    """this is used primarily for saving data locally for testing with, given 
+    it is 50+ gb of files
+    
+    Args:
+        latval (float): Latitude value.
+        lonval (float): Longitude value.
+        narr_bucket (str): S3 bucket name.
+        narr_file (str): Path to the NARR file.
+        local_filefolder (str): Path to the local file folder.
+
+
+    Returns:
+        dict[str, str]: A dictionary mapping dataset names to their corresponding 
+            local file paths, which are named for grid x,y, not lat/lon
+    """
+    (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_file=narr_file)
+    
+    files_written = {}
+    
+    narr_timeseries = get_narr_timeseries_s3(latval, lonval, narr_bucket, narr_file)
+    for dataset in DATASETS:
+        ts_filename =  narr_filename(dataset, grid_x, grid_y)
+        local_file_path = os.path.join(local_filefolder, ts_filename)
+        with open(local_file_path, "w") as f:
+            f.writelines(narr_timeseries[dataset])
+            files_written[dataset] = local_file_path
+            
+    return files_written
+ 
     
 def filter_narr_timeseries(pc, ws, wd, ts:int=0, te:int=2920):
     """filter NARR timeseries data
@@ -298,7 +349,7 @@ def read_narr_timeseries_s3(latval: float, lonval: float, bucket: str|None, narr
     # a dict of each data set 
     narr_timeseries = get_narr_timeseries_s3(latval=latval, lonval=lonval, narr_bucket=bucket, narr_file=narr_file)
     fod_data = {}
-    for dataset in ['pc', 'ws', 'wd']:
+    for dataset in DATASETS:
         fod_data[dataset] = prep_dataset_for_fod(narr_timeseries[dataset])
     
     # pc, wind_speed, wind_direction
@@ -318,31 +369,26 @@ def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, nar
         ValueError: _description_
     """
 
+    # note on variable names:I don't know what "PC" stands for so made is pc 
     # pc =?, ws = wind speed, wd = wind direction
 
     # get coordinate to grid index map arrays
-    LAT, LON = read_narr_lat_lon(narr_file)
-    
-    if not validate_latlon(latval, lonval, LAT, LON):
-        raise ValueError("Location outside the NARR domain.")
-    
-    # get grid index point for closest grid point using simplified euclidean dist
-    distance:np.ndarray = (LAT-latval)**2 + (LON-lonval)**2
-    # if input lat and/or lon are equidistant from grid point, this defaults
-    # to the most SW corner (I think )
-    idy_array, idx_array = np.where(distance==distance.min()) # tuple of arrays
-    idy:int=int(idy_array[0])
-    idx:int=int(idx_array[0]) # pick first element of arrays
+    idx, idy  = latlon_to_gridyx(latval, lonval, narr_file)
     
     # move this to a parameter if data is updated
     available_years = list(range(1979,2009,1))
    
-    # note on variable names:I don't know what "PC" stands for so made is pc 
     # since all caps vars are for constants
   
     # start the time series arrays by reading the first year, removing it from the list
     yr:int=available_years.pop(0)
     pc, ws, wd = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_dir=narr_input_dir) #type:ignore
+    
+    # TODO refactor read_one_year to return a dict keyed by DATASETS 
+    # and then use store everything in a dictionary and return a dictionary
+    # ts[dataset] = np.concatenate(ts[dataset], ts_1year[dataset])
+    # etc 
+    # return ts
     
     for yr in available_years:
         pc_1year, ws_1year, wd_1year = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_dir= narr_input_dir)
