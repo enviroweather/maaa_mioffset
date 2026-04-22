@@ -28,8 +28,7 @@ class TestFodModel():
         # original code used D for output from this model
         D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
         assert D is not None
-        assert type(D) == type(np.array([]))
-        assert D.shape == (80, 3)
+
         
     def test_fod_model_from_s3_returns_correct_data(self, narr_bucket):
         odor_index = 10
@@ -37,6 +36,8 @@ class TestFodModel():
         MI_LON = -83.0 
         ts = read_narr_timeseries_s3(MI_LAT, MI_LON, narr_bucket, narr_file)
         D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
+        assert type(D) == type(np.array([]))
+        assert D.shape == (80, 3)
         assert float(D[1,1]) == float(np.float64(0.042728866663428844))
 
     
