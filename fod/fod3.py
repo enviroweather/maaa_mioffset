@@ -14,8 +14,13 @@
 #   
 #   April 2026 refactoring (Pat Bills, MSU ICER)
 #     + refactored into distinct functions for optimization and testing 
+#     + functions are split into modules (narr_data.py, etc)
+#     + configured to use .env for configuration instead of fod_config.py
+#     + transformed data from whole-grid by year files into whole-timme series
+#       by grid-point for very fast data reading (suitable for cloud)
+#     + works with AWS S3 object storage for time series files above
 #     
-#   March 2026: Python 3 untested by working version (Pat Bills, MSU ICER)
+#   March 2026: Python 3 untested by working version (Pat Bills, MSU     ICER)
 #     + various python 2 to 3 conversions
 #     + removed imports and code that is no longer used
 #     + np types (np.float) are deprecated
