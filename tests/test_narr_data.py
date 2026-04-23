@@ -394,7 +394,7 @@ class TestReadNarrTimeseriesS3:
     Requires a valid .env with NARR_BUCKET, NARR_FILE, and AWS credentials.
     """
     
-    narr_ts = get_narr_timeseries_s3(MI_LAT, MI_LON)
+    narr_ts = get_narr_timeseries_json(MI_LAT, MI_LON)
 
     def test_returns_dict(self):    
         assert isinstance(self.narr_ts, dict)
@@ -449,7 +449,7 @@ class TestDataForFODfromS3():
     bucket=os.getenv("NARR_BUCKET")
     narr_grid_latlon=os.getenv("NARR_GRID_LATLON")
     
-    def test_read_narr_timeseries_s3(self):
+    def test_read_narr_timeseries_json(self):
         
         fod_dict = read_narr_timeseries_json(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon= self.narr_grid_latlon) #type:ignore
         

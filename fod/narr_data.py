@@ -265,7 +265,7 @@ def latlon_to_gridyx(latval: float, lonval: float, narr_grid_latlon: str = "", s
     
     return(idx,idy)
             
-def get_narr_timeseries_s3(latval: float, lonval: float, narr_bucket:str|None = None, narr_grid_latlon:str|None = None):
+def get_narr_timeseries_json(latval: float, lonval: float, narr_bucket:str|None = None, narr_grid_latlon:str|None = None):
     """Read NARR timeseries data from S3 for a given latitude and longitude.
 
     Args:
@@ -320,7 +320,7 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
     
     files_written = {}
     
-    narr_timeseries = get_narr_timeseries_s3(latval, lonval, narr_bucket, narr_grid_latlon)
+    narr_timeseries = get_narr_timeseries_json(latval, lonval, narr_bucket, narr_grid_latlon)
     for dataset in DATASETS:
         ts_filename =  narr_data_filename(dataset, grid_x, grid_y)
         local_file_path = os.path.join(local_filefolder, ts_filename)
@@ -381,7 +381,7 @@ def read_narr_timeseries_json(latval: float, lonval: float, bucket: str|None, na
     """
     
     # a dict of each data set 
-    narr_timeseries = get_narr_timeseries_s3(latval=latval, lonval=lonval, narr_bucket=bucket, narr_grid_latlon=narr_grid_latlon)
+    narr_timeseries = get_narr_timeseries_json(latval=latval, lonval=lonval, narr_bucket=bucket, narr_grid_latlon=narr_grid_latlon)
     fod_data = {}
     for dataset in DATASETS:
         fod_data[dataset] = prep_dataset_for_fod(narr_timeseries[dataset])
