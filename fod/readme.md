@@ -28,8 +28,24 @@ MTK 11/22/21:
 OFFSET-related NARR data are also stored in /data/ncep/narr/offset
 ```
 
+NARR data is wind speed, direction and PC for every 3 hours of a 365-d year
+1979 - 2008  ( in python that's `range(1979,2009)` )
+
+These are in two formats: 
+
+- HDF5 formatted grid, time series for one year  per file, each file the entire state of MI grid including PC, WS, WD
+  The progra must load each file, extract the grid point and combine these
+  This format takes less disk space (32gb) but longer time and more RAM to read and process
+- (new in 2026) JSON formatted file time series for each grid point for the entire period, as a dictionary
+  keyed by year, one file for each PC, WS, WD, stored in folders 'pc/', 'ws/', 'wd/'
+  The program needs to load just one of each of these types of files for grid 
+  These files take more disk space (50+gb) but load very fast
+
 These file use a grid index system, 
 with Lat/Lon coordinates available via `narr_latlon.h5` file
+
+The program can read these file in either a cloud "S3" object store bucket
+or in the file system.  
 
 **Configuration**
 
@@ -103,6 +119,22 @@ cd python # this folder
 . ./fod_test.sh
 ```
 
+### Testing
+
+Install development requirements with `pip install -r dev-requirements.txt` in 
+your python environment. 
+
+The package requires access to NARR data so most tests do also. 
+The tests currently require both 
+accessing NARR wind time series from a file folder and via AWS S3.  
+this will be corrected in a future version.  
+
+<!-- this is a future feature TBD
+Select which method to access data files: 
+`pytest --s3 tests` for only S3, 
+`pytest --file tests` for only files.  The default 
+
+-->
 
 
 ### Output
