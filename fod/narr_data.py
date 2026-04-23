@@ -18,7 +18,7 @@ Expected environment variables (set via .env / dotenv):
 from logging import warning
 import numpy as np
 import h5py
-import os, json
+import os, json, tempfile
 from dotenv import load_dotenv
 from aws import get_s3_client
 
@@ -30,7 +30,8 @@ from aws import get_s3_client
 DATASETS = ['pc', 'ws', 'wd']
 
 # ws, 10, 120
-def narr_filename(dataset:str, x:int,y:int )->str:
+
+def narr_data_filename(dataset:str, x:int,y:int )->str:
     """
     helper function for standard naming of the JSON formatted narr file 
     for one coordinate and all years.  The file always has a folder prepending it
@@ -48,21 +49,46 @@ def narr_filename(dataset:str, x:int,y:int )->str:
     return(one_coord_filename)
 
 
-def read_narr_lat_lon( narr_file:str = ""):
+def read_narr_lat_lon(narr_grid_latlon: str = "", source: str = "file"):
     """read in lat,lon for converting lat lon to climatology grid indices
 
     Args:
-        narr_file (str): string full path to the NARR input file. 
-            Defaults to NARR_INPUT.
+        narr_grid_latlon (str): For source="file": full path to the NARR input file.
+            For source="s3": S3 key for the file.
+            Defaults to env var NARR_GRID_LATLON (file) or NARR_GRID_LATLON_S3 (s3).
+        source (str): Where to read from - "file" (local disk) or "s3" (AWS S3).
+            Defaults to "file".
     """
-    if not narr_file:
-        narr_file = os.getenv('NARR_INPUT',"")
-            
-    if not narr_file or not os.path.exists(narr_file):
+    if source == "s3":
+        load_dotenv()
+        bucket = os.getenv('NARR_BUCKET', '')
+        s3_key = narr_grid_latlon or os.getenv('NARR_GRID_LATLON_S3', 'narr_latlon.h5')
+
+        if not bucket:
+            Warning("NARR_BUCKET not set.")
+            return None, None
+
+        s3_client = get_s3_client()
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.h5')
+        os.close(tmp_fd)
+        try:
+            s3_client.download_file(bucket, s3_key, tmp_path)
+            with h5py.File(tmp_path, 'r') as hf:
+                LAT = np.array(hf.get('LAT'))
+                LON = np.array(hf.get('LON'))
+        finally:
+            os.unlink(tmp_path)
+        return LAT, LON
+
+    # file-based (existing behaviour)
+    if not narr_grid_latlon:
+        narr_grid_latlon = os.getenv('NARR_GRID_LATLON', "")
+
+    if not narr_grid_latlon or not os.path.exists(narr_grid_latlon):
         Warning("NARR file not provided or not found.")
         return None, None
-    
-    with h5py.File(narr_file,'r') as hf:
+
+    with h5py.File(narr_grid_latlon, 'r') as hf:
         data = hf.get('LAT')
         LAT = np.array(data)
         data = hf.get('LON')
@@ -83,7 +109,7 @@ def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_input_dir:st
         dict[int, float]: A dictionary mapping years to the dataset values at the specified coordinate
     """
 
-    ts_by_year_file = narr_filename(dataset, grid_x, grid_y) 
+    ts_by_year_file = narr_data_filename(dataset, grid_x, grid_y) 
     with open(os.path.join(narr_input_dir, ts_by_year_file), 'r') as f:
         ts_by_year = json.load(f)
         
@@ -105,7 +131,7 @@ def read_dataset_from_s3(grid_x:int, grid_y:int, dataset:str, bucket:str, s3_cli
     """
     
     # ts = time series
-    ts_by_year_file = narr_filename(dataset, grid_x, grid_y)
+    ts_by_year_file = narr_data_filename(dataset, grid_x, grid_y)
     
     try:
         response = s3_client.get_object(Bucket=bucket, Key=ts_by_year_file)
@@ -199,27 +225,35 @@ def read_one_year(yr:int,idy: int, idx: int, narr_input_dir:str):
     h5f.close()        
     return pc_1year, ws_1year, wd_1year
 
-def latlon_to_gridyx(latval:float, lonval:float, narr_file:str|None=None)->tuple:
+def latlon_to_gridyx(latval: float, lonval: float, narr_grid_latlon: str = "", source: str = "file") -> tuple:
     """Convert latitude and longitude to grid indices.
 
     Args:
         latval (float): Latitude value.
         lonval (float): Longitude value.
-        narr_file (str | None): Path to the NARR file. If None, uses the environment variable 'NARR_FILE'.
+        narr_grid_latlon (str): For source="file": path to the NARR file.
+            For source="s3": S3 key for the file (defaults to NARR_GRID_LATLON_S3).
+            If empty, uses environment variables.
+        source (str): Where to read from - "file" (local disk) or "s3" (AWS S3).
+            Defaults to "file".
 
     Returns:
         tuple: Grid indices (idx, idy).
     """
     # get coordinate to grid index map arrays
-    if not narr_file:
+    if not narr_grid_latlon and source == "file":
         load_dotenv()
-        narr_file:str = os.getenv('NARR_FILE', "")
-        
-    LAT, LON = read_narr_lat_lon(narr_file)
-    
-    if not validate_latlon(latval, lonval, LAT, LON):
-        Warning("Location outside the Michigan.")
+        narr_grid_latlon = os.getenv('NARR_GRID_LATLON', "")
+
+    LAT, LON = read_narr_lat_lon(narr_grid_latlon, source=source)
+
+    if LAT is not None and LON is not None:
+        if not validate_latlon(latval, lonval, LAT, LON):
+            Warning("Location outside the Michigan.")
+            return (-1, -1)
+    else:
         return (-1, -1)
+        
     
     # get grid index point for closest grid point using simplified euclidean dist
     distance:np.ndarray = (LAT-latval)**2 + (LON-lonval)**2
@@ -231,14 +265,14 @@ def latlon_to_gridyx(latval:float, lonval:float, narr_file:str|None=None)->tuple
     
     return(idx,idy)
             
-def get_narr_timeseries_s3(latval: float, lonval: float, narr_bucket:str|None = None, narr_file:str|None = None):
+def get_narr_timeseries_s3(latval: float, lonval: float, narr_bucket:str|None = None, narr_grid_latlon:str|None = None):
     """Read NARR timeseries data from S3 for a given latitude and longitude.
 
     Args:
         latval (float): Latitude value.
         lonval (float): Longitude value.
         narr_bucket (str, optional): S3 bucket name. Defaults to None.
-        narr_file (str | None, optional): Path to the NARR file. Defaults to None.
+        narr_grid_latlon (str | None, optional): Path to the NARR file. Defaults to None.
 
     Returns:
         dict: A dictionary containing the timeseries data for each dataset.
@@ -248,13 +282,13 @@ def get_narr_timeseries_s3(latval: float, lonval: float, narr_bucket:str|None = 
     if not narr_bucket:
         narr_bucket = os.getenv('NARR_BUCKET', '')
     
-    if not narr_file: 
-        narr_file = os.getenv('NARR_FILE', '')
+    if not narr_grid_latlon: 
+        narr_grid_latlon = os.getenv('NARR_FILE', '')
         
     # this will use stuff in .env with no args
     s3_client = get_s3_client()
 
-    (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_file=narr_file)
+    (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon)
     
     if grid_x == -1 or grid_y == -1:
         raise ValueError("Grid coordinates could not be determined. Invalid lat/lon.")
@@ -266,7 +300,7 @@ def get_narr_timeseries_s3(latval: float, lonval: float, narr_bucket:str|None = 
     return(narr_timeseries)
 
 
-def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_file:str, local_filefolder:str)->dict[str, str]:
+def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
     """this is used primarily for saving data locally for testing with, given 
     it is 50+ gb of files
     
@@ -274,7 +308,7 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
         latval (float): Latitude value.
         lonval (float): Longitude value.
         narr_bucket (str): S3 bucket name.
-        narr_file (str): Path to the NARR file.
+        narr_grid_latlon (str): Path to the NARR file.
         local_filefolder (str): Path to the local file folder.
 
 
@@ -282,13 +316,13 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
         dict[str, str]: A dictionary mapping dataset names to their corresponding 
             local file paths, which are named for grid x,y, not lat/lon
     """
-    (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_file=narr_file)
+    (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon)
     
     files_written = {}
     
-    narr_timeseries = get_narr_timeseries_s3(latval, lonval, narr_bucket, narr_file)
+    narr_timeseries = get_narr_timeseries_s3(latval, lonval, narr_bucket, narr_grid_latlon)
     for dataset in DATASETS:
-        ts_filename =  narr_filename(dataset, grid_x, grid_y)
+        ts_filename =  narr_data_filename(dataset, grid_x, grid_y)
         local_file_path = os.path.join(local_filefolder, ts_filename)
         with open(local_file_path, "w") as f:
             f.writelines(narr_timeseries[dataset])
@@ -333,21 +367,21 @@ def prep_dataset_for_fod(ts_by_year: dict[int, float]):
 
 ######### main reading functions #########
 
-def read_narr_timeseries_s3(latval: float, lonval: float, bucket: str|None, narr_file: str|None)->dict[str, np.ndarray]:
+def read_narr_timeseries_s3(latval: float, lonval: float, bucket: str|None, narr_grid_latlon: str|None)->dict[str, np.ndarray]:
     """Get FOD data for a given latitude and longitude.
 
     Args:
         latval (float): Latitude value.
         lonval (float): Longitude value.
         bucket (str | None): S3 bucket name.
-        narr_file (str | None): Path to the NARR file.
+        narr_grid_latlon (str | None): Path to the NARR file.
 
     Returns:
         dict: A tuple of np arrays for use in the FOD model
     """
     
     # a dict of each data set 
-    narr_timeseries = get_narr_timeseries_s3(latval=latval, lonval=lonval, narr_bucket=bucket, narr_file=narr_file)
+    narr_timeseries = get_narr_timeseries_s3(latval=latval, lonval=lonval, narr_bucket=bucket, narr_grid_latlon=narr_grid_latlon)
     fod_data = {}
     for dataset in DATASETS:
         fod_data[dataset] = prep_dataset_for_fod(narr_timeseries[dataset])
@@ -356,14 +390,14 @@ def read_narr_timeseries_s3(latval: float, lonval: float, bucket: str|None, narr
     return fod_data #  (fod_data['pc'], fod_data['ws'], fod_data['wd'])
 
 
-def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, narr_file:str)->dict[str, np.ndarray]:
+def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, narr_grid_latlon:str)->dict[str, np.ndarray]:
     """read in wind data for all available years  from HDF5 files
 
     Args:
         latval (float): _description_
         lonval (float): _description_
         narr_input_dir (str, optional): _description_. Defaults to narr_input_dir.
-        narr_file (str, optional): _description_. Defaults to NARR_INPUT.
+        narr_grid_latlon (str, optional): _description_. Defaults to NARR_INPUT.
 
     Raises:
         ValueError: _description_
@@ -373,7 +407,7 @@ def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, nar
     # pc =?, ws = wind speed, wd = wind direction
 
     # get coordinate to grid index map arrays
-    idx, idy  = latlon_to_gridyx(latval, lonval, narr_file)
+    idx, idy  = latlon_to_gridyx(latval, lonval, narr_grid_latlon)
     
     # move this to a parameter if data is updated
     available_years = list(range(1979,2009,1))

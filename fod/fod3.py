@@ -600,7 +600,7 @@ def fod2json(D:np.ndarray)->str:
     return D_json
 
 
-def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_file:str, narr_input_dir:str, narr_data_location:str="S3"):
+def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_grid_latlon:str, narr_input_dir:str, narr_data_location:str="S3"):
     """coordinate the run of the FOD model and call functions to save various outputs
 
     Args:
@@ -636,10 +636,10 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
     # defaults to S3 since HDF5 takes significant disk space and downloads
 
     if narr_data_location == "H5":
-        ts:dict[str, np.ndarray] = read_narr_timeseries_h5(latval, lonval,narr_input_dir, narr_file)    
+        ts:dict[str, np.ndarray] = read_narr_timeseries_h5(latval, lonval,narr_input_dir, narr_grid_latlon)    
     else:
         # default S3
-        ts:dict[str, np.ndarray] = read_narr_timeseries_s3(latval, lonval,narr_input_dir, narr_file)
+        ts:dict[str, np.ndarray] = read_narr_timeseries_s3(latval, lonval,narr_input_dir, narr_grid_latlon)
         
     pc: np.ndarray = ts['pc']
     wind_speed: np.ndarray = ts['ws']
@@ -760,9 +760,9 @@ if __name__ == "__main__":
     if not output_offset_dir:
         raise ValueError("OUTPUT_OFFSET_DIR environment variable is not set")
     
-    narr_file=os.getenv("NARR_INPUT")
-    if not narr_file:
-        raise ValueError("NARR_INPUT environment variable is not set")
+    narr_grid_latlon=os.getenv("NARR_GRID_LATLON")
+    if not narr_grid_latlon:
+        raise ValueError("NARR_GRID_LATLON environment variable is not set")
     
     # this reduces the number of params but re-using the "narr_input_dir" as 
     # either the folder where the H5 files are the bucket name
@@ -775,4 +775,4 @@ if __name__ == "__main__":
     if not narr_input_dir:
         raise ValueError("NARR_INPUT_DIR or NARR_BUCKET environment variable is not set")
         
-    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_file=narr_file, narr_input_dir=narr_input_dir, narr_data_location=narr_data_location)
+    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_grid_latlon=narr_grid_latlon, narr_input_dir=narr_input_dir, narr_data_location=narr_data_location)

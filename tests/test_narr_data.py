@@ -27,8 +27,6 @@ import pytest
 from aws import get_s3_client
 from narr_data import * # read_narr_timeseries_s3, read_dataset_from_file
 
-from dotenv import load_dotenv
-load_dotenv()
 
 
 # ---------------------------------------------------------------------------
@@ -69,19 +67,19 @@ def ts_by_year_dict():
 
 class TestNarrFilename:
     def test_lowercase_dataset(self):
-        result = narr_filename("PC", 12, 34)
+        result = narr_data_filename("PC", 12, 34)
         assert result == "pc/pc_012_034.json"
 
     def test_zero_padded_indices(self):
-        result = narr_filename("ws", 1, 5)
+        result = narr_data_filename("ws", 1, 5)
         assert result == "ws/ws_001_005.json"
 
     def test_three_digit_indices(self):
-        result = narr_filename("WD", 100, 200)
+        result = narr_data_filename("WD", 100, 200)
         assert result == "wd/wd_100_200.json"
 
     def test_returns_string(self):
-        assert isinstance(narr_filename("pc", 0, 0), str)
+        assert isinstance(narr_data_filename("pc", 0, 0), str)
 
 class TestPathToNarrfile:
     def test_contains_year(self):
@@ -98,20 +96,20 @@ class TestPathToNarrfile:
 
 
 def narr_input_available():
-    path = os.getenv("NARR_INPUT")
+    path = os.getenv("NARR_GRID_LATLON")
     if path and os.path.exists(path):
         return path
     return None
 
 @pytest.fixture
 def narr_input_file():
-    path = os.getenv("NARR_INPUT")
+    path = os.getenv("NARR_GRID_LATLON")
     if path and os.path.exists(path):
         return path
     return None
 
 @pytest.mark.integration
-@pytest.mark.skipif(not narr_input_available(), reason="NARR_INPUT file not found")
+@pytest.mark.skipif(not narr_input_available(), reason="NARR_GRID_LATLON file not found")
 def testReadNarrLatLon(narr_input_file: str | None):
     # the lat/lons in this file are not really lat/lons, but a combo 
     # so that they may be added to create a distance matrix
@@ -227,7 +225,7 @@ class TestReadDatasetFromFile:
             dataset = "pc"
             grid_x, grid_y = 5, 10
             # narr_filename creates "pc/pc_005_010.json"
-            key = narr_filename(dataset, grid_x, grid_y)
+            key = narr_data_filename(dataset, grid_x, grid_y)
             full_path = os.path.join(tmpdir, key)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w") as f:
@@ -245,7 +243,7 @@ class TestReadDatasetFromFile:
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not narr_input_available(), reason="NARR_INPUT file not found")
+@pytest.mark.skipif(not narr_input_available(), reason="NARR_GRID_LATLON file not found")
 class TestLatLonToGridyx:
     def test_returns_two_ints(self):
         grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON)
@@ -269,7 +267,6 @@ class TestLatLonToGridyx:
 # ---------------------------------------------------------------------------
 
 def s3_available():
-    load_dotenv()
     return bool(os.getenv("NARR_BUCKET") and os.getenv("AWS_ACCESS_KEY_ID"))
 
 @pytest.fixture(scope="module")
@@ -305,10 +302,91 @@ class TestReadDatasetFromS3:
 
 
 
+def narr_grid_latlon_s3_available():
+    """Return True when AWS creds, NARR_BUCKET, and NARR_GRID_LATLON_S3 are all set."""
+    return bool(
+        os.getenv("NARR_BUCKET")
+        and os.getenv("AWS_ACCESS_KEY_ID")
+        and os.getenv("NARR_GRID_LATLON_S3")
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not narr_grid_latlon_s3_available(),
+    reason="AWS credentials, NARR_BUCKET, or NARR_GRID_LATLON_S3 not configured",
+)
+class TestReadNarrLatLonFromS3:
+    """Integration tests: read the NARR lat/lon reference file from S3."""
+
+    def test_returns_two_arrays(self):
+        LAT, LON = read_narr_lat_lon(source="s3")
+        assert LAT is not None
+        assert LON is not None
+        assert isinstance(LAT, np.ndarray)
+        assert isinstance(LON, np.ndarray)
+
+    def test_shapes_match(self):
+        LAT, LON = read_narr_lat_lon(source="s3")
+        assert LAT.shape == LON.shape
+
+    def test_lat_bounds(self):
+        LAT, LON = read_narr_lat_lon(source="s3")
+        assert LAT.min() >= 0
+        assert LAT.max() <= 90
+
+    def test_lon_bounds(self):
+        LAT, LON = read_narr_lat_lon(source="s3")
+        assert LON.min() >= -359
+        assert LON.max() <= 0
+
+    def test_explicit_s3_key(self):
+        """Passing the S3 key explicitly should produce the same result."""
+        s3_key = os.getenv("NARR_GRID_LATLON_S3", "narr_latlon.h5")
+        LAT1, LON1 = read_narr_lat_lon(source="s3")
+        LAT2, LON2 = read_narr_lat_lon(narr_grid_latlon=s3_key, source="s3")
+        np.testing.assert_array_equal(LAT1, LAT2)
+        np.testing.assert_array_equal(LON1, LON2)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not narr_grid_latlon_s3_available(),
+    reason="AWS credentials, NARR_BUCKET, or NARR_GRID_LATLON_S3 not configured",
+)
+class TestLatLonToGridyxS3:
+    """Integration tests: convert lat/lon to grid indices using S3 for the reference file."""
+
+    def test_returns_two_ints(self):
+        grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON, source="s3")
+        assert isinstance(grid_x, int)
+        assert isinstance(grid_y, int)
+
+    def test_values_non_negative(self):
+        grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON, source="s3")
+        assert grid_x >= 0
+        assert grid_y >= 0
+
+    def test_out_of_bounds_returns_minus_one(self):
+        grid_x, grid_y = latlon_to_gridyx(0.0, 0.0, source="s3")
+        assert grid_x == -1
+        assert grid_y == -1
+
+    def test_file_and_s3_agree(self):
+        """Grid indices from S3 and local file should be identical."""
+        narr_grid_latlon = os.getenv("NARR_GRID_LATLON", "")
+        if not narr_grid_latlon or not os.path.exists(narr_grid_latlon):
+            pytest.skip("NARR_GRID_LATLON local file not available for comparison")
+        x_s3, y_s3 = latlon_to_gridyx(MI_LAT, MI_LON, source="s3")
+        x_file, y_file = latlon_to_gridyx(MI_LAT, MI_LON, source="file")
+        assert x_s3 == x_file
+        assert y_s3 == y_file
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(
     not (s3_available() and narr_input_available()),
-    reason="AWS credentials, NARR_BUCKET, and NARR_INPUT are all required",
+    reason="AWS credentials, NARR_BUCKET, and NARR_GRID_LATLON are all required",
 )
 class TestReadNarrTimeseriesS3:
     """Integration tests for get_narr_timeseries_s3.
@@ -365,16 +443,15 @@ class TestReadNarrTimeseriesS3:
 @pytest.mark.integration
 @pytest.mark.skipif(
     not (s3_available() and narr_input_available()),
-    reason="AWS credentials, NARR_BUCKET, and NARR_INPUT are all required",
+    reason="AWS credentials, NARR_BUCKET, and NARR_GRID_LATLON are all required",
 )
 class TestDataForFODfromS3(): 
-    load_dotenv()
     bucket=os.getenv("NARR_BUCKET")
-    narr_file=os.getenv("NARR_FILE")
+    narr_grid_latlon=os.getenv("NARR_GRID_LATLON")
     
     def test_read_narr_timeseries_s3(self):
         
-        fod_dict = read_narr_timeseries_s3(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_file = self.narr_file) #type:ignore
+        fod_dict = read_narr_timeseries_s3(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon= self.narr_grid_latlon) #type:ignore
         
         assert type(fod_dict) == dict
         for time_series in fod_dict.values():
@@ -384,7 +461,7 @@ class TestDataForFODfromS3():
             # datasets are 3 hourly, so min 3 hours for 365 days big
             
     def test_fod_data_has_at_least_one_year_data(self):
-        fod_dict = read_narr_timeseries_s3(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_file = self.narr_file)
+        fod_dict = read_narr_timeseries_s3(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon = self.narr_grid_latlon)
         for time_series in fod_dict.values():
             assert time_series.size >= (24/3 * 365)
         

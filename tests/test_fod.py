@@ -5,7 +5,7 @@ from unittest import result
 import pytest
 from fod3 import *
 from aws import get_aws_config, get_s3_client
-from narr_data import read_narr_timeseries_s3, DATASETS, narr_filename
+from narr_data import read_narr_timeseries_s3, DATASETS, narr_data_filename
 
 # env set in conftest
 
