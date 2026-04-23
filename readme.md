@@ -35,9 +35,36 @@ available from the MSU Enviroweather project.
 guidance for farms outside of Michigan should refer to the regulations and/or guidelines in place in those states or 
 provinces.  By using this product, you agree to the <a href="viewMioffsetTerms.php">Terms of Use</a>. -->
 
+### Quick start
 
-All code and in this repository is (c) 2026 MSU Trustees and their
-authors and not to be distributed without express permission
+If you know how to use the command line and have python3 (min 3.11) installed, 
+you can try installing this way (tested on Linux and MacOS)
+
+1. copy this repository to your computer. 
+2. strongly recommended to create and use virtual environmnet
+    example with virtualenv in linux/MacOS shell (free open source env manager)
+
+```shell
+pip install virtualenv
+virtualenv .venv
+source .venv/bin/activate
+```
+
+3. in the main folder, run this
+    `pip install --editable .`  
+
+4. set up the .env file with settings for your AWS configuration
+
+5. run the program for your latitude and longitue, and custom file name (to differentiate)
+    `mioffset 43 -84 10 MIOFFSET_PY3`
+
+6. check the output dir in the .env file you configured for graphs and map files
+
+
+--- 
+
+*All code and in this repository is (c) 2026 MSU Trustees and their
+authors and not to be distributed without express permission*
 
 
 

@@ -743,9 +743,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         
     # end for loop
 
-
-if __name__ == "__main__":
-
+def main():
     latval = float(sys.argv[1])
     lonval = float(sys.argv[2])
     odor_index = int(float(sys.argv[3]))
@@ -776,3 +774,6 @@ if __name__ == "__main__":
         raise ValueError("NARR_DATA_DIR or NARR_BUCKET environment variable is not set")
         
     fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_grid_latlon=narr_grid_latlon, narr_input_dir=narr_input_dir, narr_data_location=narr_data_location)
+
+if __name__ == "__main__":
+    main()

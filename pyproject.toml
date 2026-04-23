@@ -44,7 +44,7 @@ dev = [
 ]
 
 [project.scripts]
-narr-transform = "mioffset.narr_data_transform:main"
+mioffset= "mioffset.fod3:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
