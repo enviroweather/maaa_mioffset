@@ -11,14 +11,18 @@ AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 REGION_NAME=
 AWS_SESSION_TOKEN=
-BUCKET_NAME=
+NARR_BUCKET=
 
 # local file locations, set base dir first
 BASE_DIR=
-NARR_INPUT_DIR="${BASEDIR}/h5"
-NARR_INPUT="${BASEDIR}/h5/narr_latlon.h5"
+NARR_DATA_DIR="${BASEDIR}/h5"
+NARR_JSON_DIR="${BASE_DIR}/json"
+NARR_GRID_LATLON="${NARR_DATA_DIR}/narr_latlon.h5"
+NARR_GRID_LATLON_S3="narr_latlon.h5"
+
 OUTPUT_OFFSET_DIR="${BASE_DIR}/MAAA_MIOFFSET/tmp"
 MIOFFSET_LOG_DIR="../logs"
+
 
 # default parameters
 TIME_FLAG="F"

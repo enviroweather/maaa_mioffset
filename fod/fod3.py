@@ -770,9 +770,9 @@ if __name__ == "__main__":
     if narr_data_location=="S3":
         narr_input_dir = os.getenv("NARR_BUCKET")
     else:
-        narr_input_dir = os.getenv("NARR_INPUT_DIR")
+        narr_input_dir = os.getenv("NARR_DATA_DIR")
         
     if not narr_input_dir:
-        raise ValueError("NARR_INPUT_DIR or NARR_BUCKET environment variable is not set")
+        raise ValueError("NARR_DATA_DIR or NARR_BUCKET environment variable is not set")
         
     fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_grid_latlon=narr_grid_latlon, narr_input_dir=narr_input_dir, narr_data_location=narr_data_location)

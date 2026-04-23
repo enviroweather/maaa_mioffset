@@ -3,7 +3,7 @@ tests/test_py
 
 Tests for py.
 
-All tests assume valid AWS credentials and BUCKET_NAME are present in the
+All tests assume valid AWS credentials and NARR_BUCKET are present in the
 .env file (loaded by conftest.py before any tests run).
 """
 

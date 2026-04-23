@@ -9,9 +9,12 @@ Provides functions to:
     the FOD model.
 
 Expected environment variables (set via .env / dotenv):
-  NARR_INPUT      — path or S3 key to the HDF5 lat/lon reference file (narr_latlon.h5)
-  NARR_INPUT_DIR  — local directory containing per-year HDF5 files (narr_PSD_<yr>_BC.h5)
-  NARR_BUCKET     — S3 bucket name holding JSON climate data files
+  NARR_GRID_LATLON  — local path to the HDF5 lat/lon reference file (narr_latlon.h5)
+  NARR_GRID_LATLON_S3 — S3 key for the same file when using S3
+  NARR_INPUT_DIR    — local directory containing per-year HDF5 files (narr_PSD_<yr>_BC.h5)
+  NARR_BUCKET       — S3 bucket name holding JSON climate data files
+  NARR_JSON_DIR     — local directory containing per-gridpoint JSON timeseries files;
+                      when set, JSON reads use local files instead of S3
   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, REGION_NAME — standard AWS credentials
 """
 
@@ -264,40 +267,74 @@ def latlon_to_gridyx(latval: float, lonval: float, narr_grid_latlon: str = "", s
     idx:int=int(idx_array[0]) 
     
     return(idx,idy)
-            
-def get_narr_timeseries_json(latval: float, lonval: float, narr_bucket:str|None = None, narr_grid_latlon:str|None = None):
-    """Read NARR timeseries data from S3 for a given latitude and longitude.
+
+def get_narr_timeseries_json(
+    latval: float,
+    lonval: float,
+    narr_bucket: str | None = None,
+    narr_grid_latlon: str | None = None,
+    narr_json_dir: str | None = None,
+    source: str = "s3",
+) -> dict:
+    """Read NARR timeseries JSON data for a given latitude and longitude.
+
+    Reads from a local directory when *narr_json_dir* is provided (or the
+    ``NARR_JSON_DIR`` environment variable is set); otherwise reads from S3.
 
     Args:
         latval (float): Latitude value.
         lonval (float): Longitude value.
-        narr_bucket (str, optional): S3 bucket name. Defaults to None.
-        narr_grid_latlon (str | None, optional): Path to the NARR file. Defaults to None.
+        narr_bucket (str | None): S3 bucket name (S3 path only). Defaults to
+            the ``NARR_BUCKET`` environment variable.
+        narr_grid_latlon (str | None): Path / S3-key for the lat/lon HDF5
+            reference file used by :func:`latlon_to_gridyx`.
+        narr_json_dir (str | None): Local directory that contains the
+            per-gridpoint JSON files organised as
+            ``<dataset>/<dataset>_<x>_<y>.json``.  When provided, local files
+            are used instead of S3.  Defaults to the ``NARR_JSON_DIR``
+            environment variable; if that is also unset, S3 is used.
 
     Returns:
-        dict: A dictionary containing the timeseries data for each dataset.
+        dict: Year-keyed timeseries for each dataset (``pc``, ``ws``, ``wd``).
     """
 
-    load_dotenv()
-    if not narr_bucket:
-        narr_bucket = os.getenv('NARR_BUCKET', '')
-    
-    if not narr_grid_latlon: 
-        narr_grid_latlon = os.getenv('NARR_FILE', '')
-        
-    # this will use stuff in .env with no args
-    s3_client = get_s3_client()
+    (grid_x, grid_y) = latlon_to_gridyx(
+        latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon or ''
+    )
 
-    (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon)
-    
     if grid_x == -1 or grid_y == -1:
         raise ValueError("Grid coordinates could not be determined. Invalid lat/lon.")
-    
-    narr_timeseries = {}
-    for dataset in DATASETS:
-         narr_timeseries[dataset]=  read_dataset_from_s3(grid_x, grid_y, dataset, bucket= narr_bucket, s3_client= s3_client)
 
-    return(narr_timeseries)
+    narr_timeseries = {}
+
+    if str(source).lower() == "s3":
+        narr_bucket:str = narr_bucket or os.getenv('NARR_BUCKET', '')
+        if not narr_bucket:
+            raise ValueError("when using S3, NARR_BUCKET must be specified in NARR_BUCKET or as a parameter.")
+        
+        # this current only uses AWS values in environment
+        s3_client = get_s3_client()
+        
+        for dataset in DATASETS:
+            narr_timeseries[dataset] = read_dataset_from_s3(
+                grid_x, grid_y, dataset, bucket=narr_bucket, s3_client=s3_client
+            )
+    
+    elif str(source).lower() == "file":
+        # use param or look in environment
+        narr_json_dir = narr_json_dir or os.getenv('NARR_JSON_DIR', '')
+        if not narr_json_dir:
+            raise ValueError("when using File, Local JSON directory must be specified in NARR_JSON_DIR or as a parameter.")        
+
+        for dataset in DATASETS:
+            narr_timeseries[dataset] = read_dataset_from_file(
+                grid_x, grid_y, dataset, narr_json_dir
+            )
+            
+    else:
+        raise ValueError("'src' must be either 's3' or 'file'")
+        
+    return narr_timeseries
 
 
 def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
@@ -317,13 +354,13 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
             local file paths, which are named for grid x,y, not lat/lon
     """
     (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon)
-    
-    files_written = {}
-    
+
+    files_written = {}    
     narr_timeseries = get_narr_timeseries_json(latval, lonval, narr_bucket, narr_grid_latlon)
     for dataset in DATASETS:
         ts_filename =  narr_data_filename(dataset, grid_x, grid_y)
         local_file_path = os.path.join(local_filefolder, ts_filename)
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
         with open(local_file_path, "w") as f:
             f.writelines(narr_timeseries[dataset])
             files_written[dataset] = local_file_path
@@ -367,27 +404,49 @@ def prep_dataset_for_fod(ts_by_year: dict[int, float]):
 
 ######### main reading functions #########
 
-def read_narr_timeseries_json(latval: float, lonval: float, bucket: str|None, narr_grid_latlon: str|None)->dict[str, np.ndarray]:
-    """Get FOD data for a given latitude and longitude.
+def read_narr_timeseries_json(
+    latval: float,
+    lonval: float,
+    bucket: str | None = None,
+    narr_grid_latlon: str | None = None,
+    narr_json_dir: str | None = None,
+    source = "s3"
+) -> dict[str, np.ndarray]:
+    """Return FOD-ready np arrays for each NARR dataset at the given location.
+
+    Delegates to :func:`get_narr_timeseries_json` for the raw year-keyed dicts,
+    then concatenates them into single arrays via :func:`prep_dataset_for_fod`.
 
     Args:
         latval (float): Latitude value.
         lonval (float): Longitude value.
-        bucket (str | None): S3 bucket name.
-        narr_grid_latlon (str | None): Path to the NARR file.
+        bucket (str | None): S3 bucket name (ignored when *narr_json_dir* is set).
+        narr_grid_latlon (str | None): Path / S3-key for the lat/lon HDF5 reference file.
+        narr_json_dir (str | None): Local directory for JSON timeseries files.  When
+            provided, local files are used instead of S3.  Defaults to the
+            ``NARR_JSON_DIR`` environment variable.
+        source (str): The source of the data, either "s3" or "file".
 
     Returns:
-        dict: A tuple of np arrays for use in the FOD model
+        dict[str, np.ndarray]: Arrays keyed by ``'pc'``, ``'ws'``, ``'wd'``.
     """
     
-    # a dict of each data set 
-    narr_timeseries = get_narr_timeseries_json(latval=latval, lonval=lonval, narr_bucket=bucket, narr_grid_latlon=narr_grid_latlon)
+    try:
+        narr_timeseries = get_narr_timeseries_json(
+            latval=latval,
+            lonval=lonval,
+            narr_bucket=bucket,
+            narr_grid_latlon=narr_grid_latlon,
+            narr_json_dir=narr_json_dir,
+        )
+    except Exception as e:
+        Warning(f"Error occurred while fetching NARR timeseries data: {e}, returning empty dict")
+        narr_timeseries:dict = {dataset: [] for dataset in DATASETS}
+    
     fod_data = {}
     for dataset in DATASETS:
         fod_data[dataset] = prep_dataset_for_fod(narr_timeseries[dataset])
-    
-    # pc, wind_speed, wind_direction
-    return fod_data #  (fod_data['pc'], fod_data['ws'], fod_data['wd'])
+    return fod_data
 
 
 def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, narr_grid_latlon:str)->dict[str, np.ndarray]:

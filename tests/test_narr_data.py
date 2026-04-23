@@ -19,22 +19,26 @@ Run everything (requires a valid .env and NARR data files):
 import os
 import json
 import tempfile
+from pathlib import Path
 
 import numpy as np
 from numpy._typing._array_like import NDArray
 import pytest
 
 from aws import get_s3_client
-from narr_data import * # read_narr_timeseries_s3, read_dataset_from_file
-
-
+from narr_data import * 
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures
 # ---------------------------------------------------------------------------
 
-MI_LAT = 44.0   # representative Michigan point used in legacy tests
-MI_LON = -83.0
+# Absolute path to the test JSON data directory (pc/, ws/, wd/ sub-folders)
+TEST_DATA_DIR = str(Path(__file__).parent / "data")
+# Grid coordinates of the sample files that live in TEST_DATA_DIR
+TEST_GRID_X = 232
+TEST_GRID_Y = 131
+TEST_MI_LAT = 44.0   # representative Michigan point used in legacy tests
+TEST_MI_LON = -83.0
 
 
 @pytest.fixture
@@ -238,7 +242,100 @@ class TestReadDatasetFromFile:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests — require real NARR HDF5 lat/lon file (NARR_INPUT env var)
+# File-based JSON timeseries tests — use files in tests/data/, no AWS needed
+# ---------------------------------------------------------------------------
+
+class TestReadDatasetFromTestData:
+    """Pure tests using the sample JSON files in tests/data/.
+
+    No HDF5 lat/lon file and no AWS credentials are required.
+    """
+
+    def test_returns_dict_for_each_dataset(self):
+        for dataset in ["pc", "ws", "wd"]:
+            result = read_dataset_from_file(TEST_GRID_X, TEST_GRID_Y, dataset, TEST_DATA_DIR)
+            assert isinstance(result, dict), f"{dataset} result should be a dict"
+
+    def test_year_keys_are_digit_strings(self):
+        for dataset in ["pc", "ws", "wd"]:
+            result = read_dataset_from_file(TEST_GRID_X, TEST_GRID_Y, dataset, TEST_DATA_DIR)
+            for key in result:
+                assert str(key).isdigit(), f"Key {key!r} in {dataset} is not a year string"
+
+    def test_values_are_lists(self):
+        for dataset in ["pc", "ws", "wd"]:
+            result = read_dataset_from_file(TEST_GRID_X, TEST_GRID_Y, dataset, TEST_DATA_DIR)
+            for yr, values in result.items():
+                assert isinstance(values, list), f"{dataset}[{yr}] should be a list"
+                assert len(values) > 0, f"{dataset}[{yr}] list is empty"
+
+    def test_prep_dataset_for_fod_works_on_test_data(self):
+        """Ensure test data flows through prep_dataset_for_fod without error."""
+        for dataset in ["pc", "ws", "wd"]:
+            result = read_dataset_from_file(TEST_GRID_X, TEST_GRID_Y, dataset, TEST_DATA_DIR)
+            arr = prep_dataset_for_fod(result)
+            assert isinstance(arr, np.ndarray)
+            assert arr.size > 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not narr_input_available(), reason="NARR_GRID_LATLON file not found")
+class TestGetNarrTimeseriesJsonFromFile:
+    """Integration tests: get_narr_timeseries_json with narr_json_dir.
+
+    Requires NARR_GRID_LATLON to convert lat/lon to grid indices.
+    No S3 access is needed — data is read from TEST_DATA_DIR.
+    """
+
+    def test_returns_dict_with_all_datasets(self):
+        result = get_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON, narr_json_dir=TEST_DATA_DIR, source="file")
+        assert isinstance(result, dict)
+        assert set(result.keys()) == set(DATASETS)
+
+    def test_each_dataset_is_year_keyed_dict(self):
+        result = get_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON, narr_json_dir=TEST_DATA_DIR, source = "file")
+        for ds in DATASETS:
+            assert isinstance(result[ds], dict), f"{ds} should be a year-keyed dict"
+            for key in result[ds]:
+                assert str(key).isdigit(), f"Key {key!r} in {ds} is not a year string"
+
+    def test_does_not_call_s3(self, monkeypatch):
+        """Passing source = "file" must not touch S3 at all."""
+        monkeypatch.setattr("narr_data.get_s3_client", lambda: (_ for _ in ()).throw(
+            AssertionError("get_s3_client was called despite narr_json_dir being set")
+        ))
+        # should not raise
+        get_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON, narr_json_dir=TEST_DATA_DIR, source="file")
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not narr_input_available(), reason="NARR_GRID_LATLON file not found")
+class TestReadNarrTimeseriesJsonFromFile:
+    """Integration tests: read_narr_timeseries_json with narr_json_dir.
+
+    Requires NARR_GRID_LATLON; no S3 access.
+    """
+
+    def test_returns_dict_of_ndarrays(self):
+        result = read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON, narr_json_dir=TEST_DATA_DIR, source="file")
+        assert isinstance(result, dict)
+        assert set(result.keys()) == set(DATASETS)
+        for ds in DATASETS:
+            assert isinstance(result[ds], np.ndarray), f"{ds} should be an ndarray"
+
+    def test_arrays_are_nonempty(self):
+        result = read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON, narr_json_dir=TEST_DATA_DIR)
+        for ds in DATASETS:
+            assert result[ds].size > 0, f"{ds} array is empty"
+
+    def test_all_datasets_same_length(self):
+        result = read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON, narr_json_dir=TEST_DATA_DIR)
+        sizes = [result[ds].size for ds in DATASETS]
+        assert len(set(sizes)) == 1, f"Dataset sizes differ: {dict(zip(DATASETS, sizes))}"
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — require real NARR HDF5 lat/lon file (NARR_GRID_LATLON)
 # ---------------------------------------------------------------------------
 
 
@@ -246,12 +343,12 @@ class TestReadDatasetFromFile:
 @pytest.mark.skipif(not narr_input_available(), reason="NARR_GRID_LATLON file not found")
 class TestLatLonToGridyx:
     def test_returns_two_ints(self):
-        grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON)
+        grid_x, grid_y = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
         assert isinstance(grid_x, int)
         assert isinstance(grid_y, int)
 
     def test_values_positive(self):
-        grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON)
+        grid_x, grid_y = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
         assert grid_x >= 0
         assert grid_y >= 0
 
@@ -271,7 +368,7 @@ def s3_available():
 
 @pytest.fixture(scope="module")
 def grid_x_y(): 
-    return latlon_to_gridyx(MI_LAT, MI_LON)
+    return latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
 
 @pytest.mark.integration
 @pytest.mark.skipif(not s3_available(), reason="AWS credentials or NARR_BUCKET not configured")
@@ -279,7 +376,7 @@ class TestReadDatasetFromS3:
     
     grid_x:int = 0
     grid_y:int = 0
-    grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON)
+    grid_x, grid_y = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
     
     s3_client = get_s3_client()
     bucket = os.getenv("NARR_BUCKET", "")
@@ -358,12 +455,12 @@ class TestLatLonToGridyxS3:
     """Integration tests: convert lat/lon to grid indices using S3 for the reference file."""
 
     def test_returns_two_ints(self):
-        grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON, source="s3")
+        grid_x, grid_y = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON, source="s3")
         assert isinstance(grid_x, int)
         assert isinstance(grid_y, int)
 
     def test_values_non_negative(self):
-        grid_x, grid_y = latlon_to_gridyx(MI_LAT, MI_LON, source="s3")
+        grid_x, grid_y = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON, source="s3")
         assert grid_x >= 0
         assert grid_y >= 0
 
@@ -377,8 +474,8 @@ class TestLatLonToGridyxS3:
         narr_grid_latlon = os.getenv("NARR_GRID_LATLON", "")
         if not narr_grid_latlon or not os.path.exists(narr_grid_latlon):
             pytest.skip("NARR_GRID_LATLON local file not available for comparison")
-        x_s3, y_s3 = latlon_to_gridyx(MI_LAT, MI_LON, source="s3")
-        x_file, y_file = latlon_to_gridyx(MI_LAT, MI_LON, source="file")
+        x_s3, y_s3 = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON, source="s3")
+        x_file, y_file = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON, source="file")
         assert x_s3 == x_file
         assert y_s3 == y_file
 
@@ -394,7 +491,7 @@ class TestReadNarrTimeseriesS3:
     Requires a valid .env with NARR_BUCKET, NARR_FILE, and AWS credentials.
     """
     
-    narr_ts = get_narr_timeseries_json(MI_LAT, MI_LON)
+    narr_ts = get_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
 
     def test_returns_dict(self):    
         assert isinstance(self.narr_ts, dict)
@@ -451,7 +548,7 @@ class TestDataForFODfromS3():
     
     def test_read_narr_timeseries_json(self):
         
-        fod_dict = read_narr_timeseries_json(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon= self.narr_grid_latlon) #type:ignore
+        fod_dict = read_narr_timeseries_json(latval=TEST_MI_LAT, lonval=TEST_MI_LON, bucket = self.bucket, narr_grid_latlon= self.narr_grid_latlon) #type:ignore
         
         assert type(fod_dict) == dict
         for time_series in fod_dict.values():
@@ -461,7 +558,7 @@ class TestDataForFODfromS3():
             # datasets are 3 hourly, so min 3 hours for 365 days big
             
     def test_fod_data_has_at_least_one_year_data(self):
-        fod_dict = read_narr_timeseries_json(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon = self.narr_grid_latlon)
+        fod_dict = read_narr_timeseries_json(latval=TEST_MI_LAT, lonval=TEST_MI_LON, bucket = self.bucket, narr_grid_latlon = self.narr_grid_latlon)
         for time_series in fod_dict.values():
             assert time_series.size >= (24/3 * 365)
         
