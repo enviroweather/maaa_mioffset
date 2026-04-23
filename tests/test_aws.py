@@ -11,7 +11,7 @@ import os
 import pytest
 import boto3
 
-from aws import *
+from mioffset.aws import *
 
 
 class TestGetAwsConfig:

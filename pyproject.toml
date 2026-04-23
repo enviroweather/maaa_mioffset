@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mioffset"
+version = "0.1.0"
+description = "MI Odor Print — odor setback distance model for Michigan livestock facilities"
+readme = "readme.md"
+license = { text = "Copyright 2026 MSU Trustees. All rights reserved." }
+authors = [
+    { name = "MSU EnviroWeather / ICER-RSE", email = "enviroweather@msu.edu" },
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "boto3",
+    "geopy",
+    "h5py",
+    "matplotlib",
+    "numpy",
+    "pyshp",
+    "python-dotenv",
+    "simplekml",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/enviroweather/maaa_mioffset"
+"Bug Tracker" = "https://github.com/enviroweather/maaa_mioffset/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-xdist",
+]
+
+[project.scripts]
+narr-transform = "mioffset.narr_data_transform:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mioffset*"]
+
+[tool.setuptools.package-data]
+mioffset = ["readme.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: marks tests that require external resources (NARR files or AWS/S3)",
+]

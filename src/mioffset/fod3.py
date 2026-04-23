@@ -61,7 +61,7 @@ import simplekml
 import shapefile
 from dotenv import load_dotenv
 
-from narr_data import read_narr_timeseries_h5, read_narr_timeseries_json, filter_narr_timeseries
+from .narr_data import read_narr_timeseries_h5, read_narr_timeseries_json, filter_narr_timeseries
 
 DEBUG=os.getenv('DEBUG', True)
 

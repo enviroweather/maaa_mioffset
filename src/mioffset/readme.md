@@ -98,11 +98,13 @@ These files have 3 datasets: PC, WD, WS
 
 The latest program is fod3.py, tested with Python 3.13 
 
-**Command line params**
+#### Old-school, just run from the command line
+
+Ensure the python environment is activated
 
 ```
-cd python  # this folder
-fod3.py  latval lonval odor_index time_stamp 
+cd src/mioffset  # this folder
+python fod3.py  latval lonval odor_index time_stamp 
 ```
 
 where
@@ -112,14 +114,16 @@ where
 - odor_index = value calculated using area of buildings etc. 
 - time_stamp = string to add unique value to file name
 
-There is a shell script with example values that can be run on linux or mac: 
+#### using test run script
 
+From top level of this repository
 ```
-cd python # this folder
-. ./fod_test.sh
+. scripts/fod_test.sh
 ```
 
-### Testing
+This will write files to folder for output set in the .env file
+
+### Testing with pytest
 
 Install development requirements with `pip install -r dev-requirements.txt` in 
 your python environment. 
@@ -128,6 +132,10 @@ The package requires access to NARR data so most tests do also.
 The tests currently require both 
 accessing NARR wind time series from a file folder and via AWS S3.  
 this will be corrected in a future version.  
+
+After activating the environment, from the top level of this repository run 
+
+`pytest tests`
 
 <!-- this is a future feature TBD
 Select which method to access data files: 

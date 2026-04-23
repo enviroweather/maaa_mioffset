@@ -29,7 +29,7 @@ source .venv/bin/activate
 cd python
 echo "x coordinate = $SLURM_ARRAY_TASK_ID"
 echo "----"
-python narr_data_transform.py ${SLURM_ARRAY_TASK_ID}
+python ../src/mioffset/narr_data_transform.py ${SLURM_ARRAY_TASK_ID}
 echo "----"
 
 if [ -n "$SLURM_JOB_ID" ]; then

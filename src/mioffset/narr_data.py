@@ -23,7 +23,7 @@ import numpy as np
 import h5py
 import os, json, tempfile
 from dotenv import load_dotenv
-from aws import get_s3_client
+from .aws import get_s3_client
 
 
 # the original HDF5 files each had 3 datasets or types of date
@@ -228,6 +228,7 @@ def read_one_year(yr:int,idy: int, idx: int, narr_input_dir:str):
     h5f.close()        
     return pc_1year, ws_1year, wd_1year
 
+#TODO rename source parameter to narr_data_location and update tests
 def latlon_to_gridyx(latval: float, lonval: float, narr_grid_latlon: str = "", source: str = "file") -> tuple:
     """Convert latitude and longitude to grid indices.
 
@@ -268,6 +269,7 @@ def latlon_to_gridyx(latval: float, lonval: float, narr_grid_latlon: str = "", s
     
     return(idx,idy)
 
+#TODO rename source parameter to narr_data_location and update tests
 def get_narr_timeseries_json(
     latval: float,
     lonval: float,
@@ -404,6 +406,7 @@ def prep_dataset_for_fod(ts_by_year: dict[int, float]):
 
 ######### main reading functions #########
 
+#TODO rename source parameter to narr_data_location and update tests
 def read_narr_timeseries_json(
     latval: float,
     lonval: float,
@@ -449,6 +452,8 @@ def read_narr_timeseries_json(
     return fod_data
 
 
+#TODO add narr_data_location parameter to allow for reading H5 files from s3 and update tests
+#TODO add code to read from S3 using NARR_BUCKET parameter/os environement 
 def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, narr_grid_latlon:str)->dict[str, np.ndarray]:
     """read in wind data for all available years  from HDF5 files
 

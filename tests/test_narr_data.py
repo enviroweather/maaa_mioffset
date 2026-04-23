@@ -25,8 +25,8 @@ import numpy as np
 from numpy._typing._array_like import NDArray
 import pytest
 
-from aws import get_s3_client
-from narr_data import * 
+from mioffset.aws import get_s3_client
+from mioffset.narr_data import * 
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures
@@ -34,11 +34,19 @@ from narr_data import *
 
 # Absolute path to the test JSON data directory (pc/, ws/, wd/ sub-folders)
 TEST_DATA_DIR = str(Path(__file__).parent / "data")
+# Absolute path to the test NARR lat/lon grid file used by all tests
+TEST_NARR_GRID_LATLON = str(Path(TEST_DATA_DIR) / "narr_latlon.h5")
 # Grid coordinates of the sample files that live in TEST_DATA_DIR
 TEST_GRID_X = 232
 TEST_GRID_Y = 131
 TEST_MI_LAT = 44.0   # representative Michigan point used in legacy tests
 TEST_MI_LON = -83.0
+
+
+@pytest.fixture(autouse=True)
+def use_test_narr_grid_latlon(monkeypatch):
+    """Force all tests (and called functions) to use test lat/lon grid file."""
+    monkeypatch.setenv("NARR_GRID_LATLON", TEST_NARR_GRID_LATLON)
 
 
 @pytest.fixture
@@ -301,7 +309,7 @@ class TestGetNarrTimeseriesJsonFromFile:
 
     def test_does_not_call_s3(self, monkeypatch):
         """Passing source = "file" must not touch S3 at all."""
-        monkeypatch.setattr("narr_data.get_s3_client", lambda: (_ for _ in ()).throw(
+        monkeypatch.setattr("mioffset.narr_data.get_s3_client", lambda: (_ for _ in ()).throw(
             AssertionError("get_s3_client was called despite narr_json_dir being set")
         ))
         # should not raise
@@ -342,6 +350,7 @@ class TestReadNarrTimeseriesJsonFromFile:
 @pytest.mark.integration
 @pytest.mark.skipif(not narr_input_available(), reason="NARR_GRID_LATLON file not found")
 class TestLatLonToGridyx:
+    
     def test_returns_two_ints(self):
         grid_x, grid_y = latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
         assert isinstance(grid_x, int)
