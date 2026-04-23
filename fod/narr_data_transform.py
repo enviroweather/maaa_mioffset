@@ -124,18 +124,18 @@ if __name__ == "__main__":
         x_coordinate = None
         
     ## set up narr files
-    narr_input_dir:str = os.getenv('NARR_INPUT_DIR', "")
+    narr_input_dir:str = os.getenv('NARR_DATA_DIR', "")
     if not os.path.exists(path_to_h5_narrfile(2001, narr_input_dir)):
         print("can't access NARR files")
         sys.exit(1)
     
-    narr_bucket=os.getenv('BUCKET_NAME', "")
+    narr_bucket=os.getenv('NARR_BUCKET', "")
     
     s3_client = get_s3_client()  # use default dot-env
     
     # check that the bucket is in there
     if not narr_bucket:
-        narr_bucket = os.getenv('BUCKET_NAME')
+        narr_bucket = os.getenv('NARR_BUCKET')
     if not check_bucket(s3_client, narr_bucket):
         Warning(f"Bucket not found or accessible: {narr_bucket}")
         sys.exit(1)
