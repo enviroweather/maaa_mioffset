@@ -5,7 +5,7 @@ from unittest import result
 import pytest
 from fod3 import *
 from aws import get_aws_config, get_s3_client
-from narr_data import read_narr_timeseries_s3, DATASETS, narr_data_filename
+from narr_data import read_narr_timeseries_json, DATASETS, narr_data_filename
 
 # env set in conftest
 
@@ -19,7 +19,7 @@ def narr_bucket():
 
 @pytest.fixture()
 def ts(narr_bucket):
-    example_ts = read_narr_timeseries_s3(MI_LAT, MI_LON, narr_bucket, narr_file)
+    example_ts = read_narr_timeseries_json(MI_LAT, MI_LON, narr_bucket, narr_file)
     return(example_ts)
     
 class TestFodModel():    
@@ -34,7 +34,7 @@ class TestFodModel():
         odor_index = 10
         MI_LAT = 44.0   # representative Michigan point used in legacy tests
         MI_LON = -83.0 
-        ts = read_narr_timeseries_s3(MI_LAT, MI_LON, narr_bucket, narr_file)
+        ts = read_narr_timeseries_json(MI_LAT, MI_LON, narr_bucket, narr_file)
         D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
         assert type(D) == type(np.array([]))
         assert D.shape == (80, 3)

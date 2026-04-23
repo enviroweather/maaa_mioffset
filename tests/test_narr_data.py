@@ -451,7 +451,7 @@ class TestDataForFODfromS3():
     
     def test_read_narr_timeseries_s3(self):
         
-        fod_dict = read_narr_timeseries_s3(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon= self.narr_grid_latlon) #type:ignore
+        fod_dict = read_narr_timeseries_json(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon= self.narr_grid_latlon) #type:ignore
         
         assert type(fod_dict) == dict
         for time_series in fod_dict.values():
@@ -461,7 +461,7 @@ class TestDataForFODfromS3():
             # datasets are 3 hourly, so min 3 hours for 365 days big
             
     def test_fod_data_has_at_least_one_year_data(self):
-        fod_dict = read_narr_timeseries_s3(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon = self.narr_grid_latlon)
+        fod_dict = read_narr_timeseries_json(latval=MI_LAT, lonval=MI_LON, bucket = self.bucket, narr_grid_latlon = self.narr_grid_latlon)
         for time_series in fod_dict.values():
             assert time_series.size >= (24/3 * 365)
         

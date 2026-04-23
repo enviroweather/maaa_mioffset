@@ -61,7 +61,7 @@ import simplekml
 import shapefile
 from dotenv import load_dotenv
 
-from narr_data import read_narr_timeseries_h5, read_narr_timeseries_s3, filter_narr_timeseries
+from narr_data import read_narr_timeseries_h5, read_narr_timeseries_json, filter_narr_timeseries
 
 DEBUG=os.getenv('DEBUG', True)
 
@@ -639,7 +639,7 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
         ts:dict[str, np.ndarray] = read_narr_timeseries_h5(latval, lonval,narr_input_dir, narr_grid_latlon)    
     else:
         # default S3
-        ts:dict[str, np.ndarray] = read_narr_timeseries_s3(latval, lonval,narr_input_dir, narr_grid_latlon)
+        ts:dict[str, np.ndarray] = read_narr_timeseries_json(latval, lonval,narr_input_dir, narr_grid_latlon)
         
     pc: np.ndarray = ts['pc']
     wind_speed: np.ndarray = ts['ws']

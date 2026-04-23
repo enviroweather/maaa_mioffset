@@ -367,7 +367,7 @@ def prep_dataset_for_fod(ts_by_year: dict[int, float]):
 
 ######### main reading functions #########
 
-def read_narr_timeseries_s3(latval: float, lonval: float, bucket: str|None, narr_grid_latlon: str|None)->dict[str, np.ndarray]:
+def read_narr_timeseries_json(latval: float, lonval: float, bucket: str|None, narr_grid_latlon: str|None)->dict[str, np.ndarray]:
     """Get FOD data for a given latitude and longitude.
 
     Args:
