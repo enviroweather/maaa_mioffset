@@ -6,6 +6,10 @@ fod/__pycache__
 **/__pycache__
 **/.pytest_cache
 
+dist
+src/*.egg-info
+
+
 .venv/
 output/*
 tmp/*
