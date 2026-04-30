@@ -9,13 +9,18 @@ Provides functions to:
     the FOD model.
 
 Expected environment variables (set via .env / dotenv):
-  NARR_GRID_LATLON  — local path to the HDF5 lat/lon reference file (narr_latlon.h5)
-  NARR_GRID_LATLON_S3 — S3 key for the same file when using S3
-  NARR_INPUT_DIR    — local directory containing per-year HDF5 files (narr_PSD_<yr>_BC.h5)
-  NARR_BUCKET       — S3 bucket name holding JSON climate data files
-  NARR_JSON_DIR     — local directory containing per-gridpoint JSON timeseries files;
+  Grid file location: one of either
+    - NARR_GRID_LATLON  — local path to the HDF5 lat/lon reference file (narr_latlon.h5), OR 
+    - NARR_GRID_LATLON_S3 — S3 key for the same file when using S3 (requires NARR_BUCKET to be set, also requires AWS credentials,)
+
+  Data file locations: one of either 
+    - NARR_DATA_DIR    — aka NARR_H5_DIR local directory containing per-year HDF5 files (narr_PSD_<yr>_BC.h5)
+    - NARR_BUCKET       — S3 bucket name holding JSON climate data files (also requires AWS credentials) 
+    - NARR_JSON_DIR     — local directory containing per-gridpoint JSON timeseries files;
                       when set, JSON reads use local files instead of S3
-  AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, REGION_NAME — standard AWS credentials
+
+  AWS access - if using must have all of 
+    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, REGION_NAME — standard AWS credentials
 """
 
 from logging import warning
@@ -100,20 +105,20 @@ def read_narr_lat_lon(narr_grid_latlon: str = "", source: str = "file"):
     return(LAT, LON)
         
 
-def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_input_dir:str):
+def read_dataset_from_file(grid_x:int, grid_y:int, dataset:str,narr_data_dir:str):
     """read a dataset for all years, one coordinate from s3
 
     Args
         grid_x (int): grid point
         grid_y (int): grid point
-        narr_input_dir (str): directory containing NARR files
+        narr_data_dir (str): directory containing NARR files
 
     Returns:    
         dict[int, float]: A dictionary mapping years to the dataset values at the specified coordinate
     """
 
     ts_by_year_file = narr_data_filename(dataset, grid_x, grid_y) 
-    with open(os.path.join(narr_input_dir, ts_by_year_file), 'r') as f:
+    with open(os.path.join(narr_data_dir, ts_by_year_file), 'r') as f:
         ts_by_year = json.load(f)
         
     return ts_by_year
@@ -162,14 +167,14 @@ def validate_latlon(latval: float, lonval: float, LAT: np.ndarray, LON: np.ndarr
     
     return(True)
 
-def path_to_h5_narrfile(yr:str|int, narr_input_dir:str)->str:
+def path_to_h5_narrfile(yr:str|int, narr_data_dir:str)->str:
     """
     very simple helper to create path to narr file by year
     for use in different parts of the program or for file mgmt
     
     Args:
         yr (int): year of data to read, embedded in filename
-        narr_input_dir (str): directory containing NARR files
+        narr_data_dir (str): directory containing NARR files
 
     Returns:
         str: Path to the NARR file for the specified year.
@@ -177,30 +182,30 @@ def path_to_h5_narrfile(yr:str|int, narr_input_dir:str)->str:
     """
     
     narr_file_name = f"narr_PSD_{yr}_BC.h5"
-    h5f_annual_filename = os.path.join(narr_input_dir, narr_file_name)
+    h5f_annual_filename = os.path.join(narr_data_dir, narr_file_name)
     return(h5f_annual_filename)
 
 # read one year WHOLE grid
-def read_one_year_grid(yr:str|int,narr_input_dir:str):
+def read_one_year_grid(yr:str|int,narr_data_dir:str):
     """read one year hf5 file, extra 3 datasets, return whole grid
     Files must be named like narr_PSD_1980_BC.h5
     
     Args:
         yr (int): year of data to read, embedded in filename
-        narr_input_dir (str): path to NARR input files
+        narr_data_dir (str): path to NARR input files
     Returns:
         tuple of np arrays: timeseries values for PC, WD and WS 
     """
     
     yr = str(yr)
-    h5f_annual_filename = path_to_h5_narrfile(yr, narr_input_dir)
+    h5f_annual_filename = path_to_h5_narrfile(yr, narr_data_dir)
     h5f = h5py.File(h5f_annual_filename, 'r')
     return(h5f)
 
 
 # called before and inside the loop by years
 # this returns one grid coordinate
-def read_one_year(yr:int,idy: int, idx: int, narr_input_dir:str):
+def read_one_year_h5(yr:int,idy: int, idx: int, narr_data_dir:str):
     """read one year hf5 file, extra 3 datasets and filter just one coordinate
     Files must be named like narr_PSD_1980_BC.h5
     
@@ -208,25 +213,27 @@ def read_one_year(yr:int,idy: int, idx: int, narr_input_dir:str):
         yr (int): year of data to read, embedded in filename
         idy (int): index of grid y coordinate (North/South)
         idx (int): index of grid x coordinate (East/West)
-        narr_input_dir (str): path to NARR input files
+        narr_data_dir (str): path to NARR input files
     Returns:
         tuple of np arrays: timeseries values for PC, WD and WS from one grid point, all hours
     """
     
 
-    h5f_annual_filename = path_to_h5_narrfile(yr, narr_input_dir  ) 
+    h5f_annual_filename = path_to_h5_narrfile(yr, narr_data_dir  ) 
     
     # TODO rew-write this to use 
     h5f = h5py.File(h5f_annual_filename, 'r')
     # extract all values for one year
     # previously filtered at read time, like
     #  pc_1year = h5f['pc'][idy,idx,ts:te]
-    pc_1year = h5f['PC'][idy,idx,]  #type:ignore
-    ws_1year = h5f['WS'][idy,idx,]  #type:ignore
-    wd_1year = h5f['WD'][idy,idx,]  #type:ignore
     
-    h5f.close()        
-    return pc_1year, ws_1year, wd_1year
+    ts:dict[str, np.ndarray]= {}
+    ts['pc'] = np.array(h5f['PC'][idy,idx,])
+    ts['ws'] = np.array(h5f['WS'][idy,idx,])
+    ts['wd'] = np.array(h5f['WD'][idy,idx,])
+
+    h5f.close()
+    return ts
 
 #TODO rename source parameter to narr_data_location and update tests
 def latlon_to_gridyx(latval: float, lonval: float, narr_grid_latlon: str = "", source: str = "file") -> tuple:
@@ -270,12 +277,14 @@ def latlon_to_gridyx(latval: float, lonval: float, narr_grid_latlon: str = "", s
     return(idx,idy)
 
 #TODO rename source parameter to narr_data_location and update tests
+# should this be split into two functions (s3 vs file) so that 
+# if reading from a file the bucket does not need to be sent?
 def get_narr_timeseries_json(
     latval: float,
     lonval: float,
-    narr_bucket: str | None = None,
-    narr_grid_latlon: str | None = None,
-    narr_json_dir: str | None = None,
+    narr_bucket: str = "",
+    narr_grid_latlon: str = "",
+    narr_json_dir: str = "",
     source: str = "s3",
 ) -> dict:
     """Read NARR timeseries JSON data for a given latitude and longitude.
@@ -300,9 +309,7 @@ def get_narr_timeseries_json(
         dict: Year-keyed timeseries for each dataset (``pc``, ``ws``, ``wd``).
     """
 
-    (grid_x, grid_y) = latlon_to_gridyx(
-        latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon or ''
-    )
+    (grid_x, grid_y) = latlon_to_gridyx(latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon, source=source)
 
     if grid_x == -1 or grid_y == -1:
         raise ValueError("Grid coordinates could not be determined. Invalid lat/lon.")
@@ -310,9 +317,10 @@ def get_narr_timeseries_json(
     narr_timeseries = {}
 
     if str(source).lower() == "s3":
-        narr_bucket:str = narr_bucket or os.getenv('NARR_BUCKET', '')
+        # let the calling program get this config val
+        # narr_bucket:str = narr_bucket or os.getenv('NARR_BUCKET', '')
         if not narr_bucket:
-            raise ValueError("when using S3, NARR_BUCKET must be specified in NARR_BUCKET or as a parameter.")
+            raise ValueError("when using S3, must include narr_bucket parameter must be provided")
         
         # this current only uses AWS values in environment
         s3_client = get_s3_client()
@@ -340,8 +348,8 @@ def get_narr_timeseries_json(
 
 
 def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
-    """this is used primarily for saving data locally for testing with, given 
-    it is 50+ gb of files
+    """this is used primarily for saving one of these files locally for testing 
+    as one-off function and not needed as part of the FOD model run
     
     Args:
         latval (float): Latitude value.
@@ -396,9 +404,6 @@ def prep_dataset_for_fod(ts_by_year: dict[int, float]):
         np.array: time series of floats as expected by FOD 
     """
     
-    # if 'numpy' not in sys.modules:
-    #     import numpy as np
-    
     ts_by_year_nparray = [item for ts in list(ts_by_year.values()) for item in ts] 
     ts_by_year_merged = np.array(ts_by_year_nparray)
     return ts_by_year_merged
@@ -410,9 +415,9 @@ def prep_dataset_for_fod(ts_by_year: dict[int, float]):
 def read_narr_timeseries_json(
     latval: float,
     lonval: float,
-    bucket: str | None = None,
-    narr_grid_latlon: str | None = None,
-    narr_json_dir: str | None = None,
+    bucket: str  = "",
+    narr_grid_latlon: str = "",
+    narr_json_dir: str = "",
     source = "s3"
 ) -> dict[str, np.ndarray]:
     """Return FOD-ready np arrays for each NARR dataset at the given location.
@@ -434,6 +439,8 @@ def read_narr_timeseries_json(
         dict[str, np.ndarray]: Arrays keyed by ``'pc'``, ``'ws'``, ``'wd'``.
     """
     
+    #TODO make this work for reading a file from disk in addition to S3
+    #  currently is assumes these files are on S3, but that's a problem for testing
     try:
         narr_timeseries = get_narr_timeseries_json(
             latval=latval,
@@ -441,6 +448,7 @@ def read_narr_timeseries_json(
             narr_bucket=bucket,
             narr_grid_latlon=narr_grid_latlon,
             narr_json_dir=narr_json_dir,
+            source = source
         )
     except Exception as e:
         Warning(f"Error occurred while fetching NARR timeseries data: {e}, returning empty dict")
@@ -454,14 +462,14 @@ def read_narr_timeseries_json(
 
 #TODO add narr_data_location parameter to allow for reading H5 files from s3 and update tests
 #TODO add code to read from S3 using NARR_BUCKET parameter/os environement 
-def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, narr_grid_latlon:str)->dict[str, np.ndarray]:
+def read_narr_timeseries_h5(latval: float, lonval: float,narr_data_dir:str, narr_grid_latlon:str)->dict[str, np.ndarray]:
     """read in wind data for all available years  from HDF5 files
 
     Args:
-        latval (float): _description_
-        lonval (float): _description_
-        narr_input_dir (str, optional): _description_. Defaults to narr_input_dir.
-        narr_grid_latlon (str, optional): _description_. Defaults to NARR_INPUT.
+        latval (float): latitude value in decimal degrees (CRS unknown)
+        lonval (float): longitude value in decimal degrees (CRS unknown)
+        narr_data_dir (str, optional): location of HDF5 timeseries files
+        narr_grid_latlon (str, optional): path to grid lat/lon file.
 
     Raises:
         ValueError: _description_
@@ -480,7 +488,9 @@ def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, nar
   
     # start the time series arrays by reading the first year, removing it from the list
     yr:int=available_years.pop(0)
-    pc, ws, wd = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_dir=narr_input_dir) #type:ignore
+    
+    # TODO 
+    narr_ts = read_one_year_h5(yr=yr, idx=idx, idy=idy, narr_data_dir=narr_data_dir) #type:ignore
     
     # TODO refactor read_one_year to return a dict keyed by DATASETS 
     # and then use store everything in a dictionary and return a dictionary
@@ -489,12 +499,12 @@ def read_narr_timeseries_h5(latval: float, lonval: float,narr_input_dir:str, nar
     # return ts
     
     for yr in available_years:
-        pc_1year, ws_1year, wd_1year = read_one_year(yr=yr, idx=idx, idy=idy, narr_input_dir= narr_input_dir)
+        ts_1year = read_one_year_h5(yr=yr, idx=idx, idy=idy, narr_data_dir= narr_data_dir)
         # note on py2 to 3 conversion: 
         # it was axis=1 in original script but that doesn't work on 1-d arrays
         # axis=0 combines row-wise for 1-d array, which following code uses
-        pc=np.concatenate((pc,pc_1year),axis=0) #type:ignore    
-        ws=np.concatenate((ws,ws_1year),axis=0) #type:ignore
-        wd=np.concatenate((wd,wd_1year),axis=0) #type:ignore
+        narr_ts['pc']:np.ndarray = np.concatenate((narr_ts['pc'],ts_1year['pc']),axis=0) #type:ignore    
+        narr_ts['ws']:np.ndarray = np.concatenate((narr_ts['ws'],ts_1year['ws']),axis=0) #type:ignore
+        narr_ts['wd']:np.ndarray = np.concatenate((narr_ts['wd'],ts_1year['wd']),axis=0) #type:ignore
                 
-    return({'pc': pc, 'ws': ws, 'wd': wd}) 
+    return(narr_ts) 

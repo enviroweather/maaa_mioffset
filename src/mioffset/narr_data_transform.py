@@ -1,4 +1,12 @@
 #! /usr/bin/env python3 
+"""This is a single, one-off script that is not part of the python package or 
+regular function of the MI-OFFSET model (FOD).  It is used to read the 
+original HDF5 grid files (one per year for the whole state for each of
+the types of datasets) and convert to JSON files, one per dataset per grid 
+point for all years, and then store those JSON files into S3
+
+Reading in one grid point is much more efficient and does not require H5 library
+"""
 
 import os, sys
 import json
@@ -24,7 +32,7 @@ def build_grid_coordinates_by_x(grided_data, grid_x:int|None=None):
     # coordinate list? this wil work for this one-off
     
     # previously got the grid from reading a single year and filtering
-    # one_year = read_one_year_grid(1979, narr_input_dir=narr_input_dir)
+    # one_year = read_one_year_grid(1979, narr_data_dir=narr_data_dir)
     # then it was 
     # one_year = narr_data[years[0]]['PC']
     grid_size_x = grided_data.shape[0]
@@ -48,7 +56,9 @@ def build_grid_coordinates_by_x(grided_data, grid_x:int|None=None):
     return(coords)
             
 
-def transform_by_coordinate(grid_x, narr_bucket, narr_input_dir):
+def transform_by_coordinate(grid_x, narr_bucket, narr_data_dir):
+    """Transform NARR data by coordinate, converting all y points
+    for one x grid point"""
 
     load_dotenv()
     
@@ -65,7 +75,7 @@ def transform_by_coordinate(grid_x, narr_bucket, narr_input_dir):
     narr_data = {}
     for yr in years:
         print(yr)
-        narr_data[yr] = read_one_year_grid(str(yr), narr_input_dir)
+        narr_data[yr] = read_one_year_grid(str(yr), narr_data_dir)
  
     one_year = narr_data[years[0]]['PC']
     coords = build_grid_coordinates_by_x(one_year,grid_x=grid_x)
@@ -124,8 +134,8 @@ if __name__ == "__main__":
         x_coordinate = None
         
     ## set up narr files
-    narr_input_dir:str = os.getenv('NARR_DATA_DIR', "")
-    if not os.path.exists(path_to_h5_narrfile(2001, narr_input_dir)):
+    narr_data_dir:str = os.getenv('NARR_DATA_DIR', "")
+    if not os.path.exists(path_to_h5_narrfile(2001, narr_data_dir)):
         print("can't access NARR files")
         sys.exit(1)
     
@@ -140,7 +150,7 @@ if __name__ == "__main__":
         Warning(f"Bucket not found or accessible: {narr_bucket}")
         sys.exit(1)
     
-    result = transform_by_coordinate(grid_x = x_coordinate, narr_bucket=narr_bucket, narr_input_dir=narr_input_dir)
+    result = transform_by_coordinate(grid_x = x_coordinate, narr_bucket=narr_bucket, narr_data_dir=narr_data_dir)
     if not result:
         print(f"ERROR x = {x_coordinate}")
         sys.exit(1)
