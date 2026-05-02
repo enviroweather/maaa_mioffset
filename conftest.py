@@ -2,8 +2,7 @@
 conftest.py — root-level pytest configuration.
 
 Loads the .env file before any test module is imported, so environment
-variables (NARR_INPUT, NARR_BUCKET, AWS credentials, etc.) are available
-to every test and to the modules under python/.
+variables are available to every test and to the modules under python/.
 """
 from pathlib import Path
 from dotenv import load_dotenv
