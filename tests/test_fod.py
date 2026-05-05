@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from mioffset.fod3 import *
 from mioffset.aws import get_aws_config, get_s3_client
-from mioffset.narr_data import read_narr_lat_lon, read_narr_timeseries_json, DATASETS, narr_data_filename
+from mioffset.narr_data import GridIndex, WindData
 
 # env set in conftest
 
@@ -31,12 +31,7 @@ MI_LON = -83.0
 #     """Force all tests (and called functions) to use test lat/lon grid file."""
 #     monkeypatch.setenv("NARR_GRID_LATLON", TEST_NARR_GRID_LATLON)
 
-@pytest.fixture(scope="module")
-def narr_bucket():
-    return os.getenv("NARR_BUCKET")
-
-
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, )
 def test_narr_grid_latlon_path(monkeypatch):
     """Set all tests (and called functions) to use test lat/lon grid file."""
     
@@ -44,57 +39,67 @@ def test_narr_grid_latlon_path(monkeypatch):
     # this should rep
     # first look for an env var pointing to a test file
     # if that is empty use the default location for a test file
-    test_narr_grid_latlon_path = os.getenv("TEST_NARR_GRID_LATLON", TEST_NARR_GRID_LATLON)
+    test_path = os.getenv("TEST_NARR_GRID_LATLON", TEST_NARR_GRID_LATLON)
     # next check for an env var that pointing to the programs grid file
     # if that is not set, use the test one
-    test_narr_grid_latlon_path = os.getenv("NARR_GRID_LATLON",test_narr_grid_latlon_path)
+    test_path = os.getenv("NARR_GRID_LATLON",test_path)
     # we've gone through and set the path to something.  Is is there
-    if not os.path.exists(test_narr_grid_latlon_path):
+    if not os.path.exists(test_path):
         raise RuntimeError("can't find the grid file")
     
-    monkeypatch.setenv("NARR_GRID_LATLON", test_narr_grid_latlon_path)
-    yield test_narr_grid_latlon_path
+    monkeypatch.setenv("NARR_GRID_LATLON", test_path)
+    yield test_path
 
 
-@pytest.fixture(scope="module")
-def narr_gridxy_data(test_narr_grid_latlon_path):
-    MI_LAT, MI_LON = read_narr_lat_lon(test_narr_grid_latlon_path)
-    return ({'lat':MI_LAT, 'lon':MI_LON})
+@pytest.fixture()
+def narr_bucket():
+    return os.getenv("NARR_BUCKET")
+
+@pytest.fixture()
+def narr_grid_index(test_narr_grid_latlon_path):
+    # assuming there is a test version of the grid file in the test folder
+    try:
+        grid_index = GridIndex(test_narr_grid_latlon_path)
+    except Exception as e:
+        raise RuntimeError(f"Error occurred while initializing GridIndex: {e}")
+    yield grid_index
 
 
-@pytest.fixture(scope="module")
-def ts(narr_gridxy_data):
-    narr_bucket = os.getenv("NARR_BUCKET", "")
-    if not narr_bucket:
-        narr_folder = os.getenv("NARR_DATA_DIR", "")
-        if os.path.exists(narr_folder):
-            # use local files
-            example_ts = read_narr_timeseries_h5(narr_gridxy_data['lat'], narr_gridxy_data['lon'], narr_folder)
-        else:
-            raise RuntimeError("NARR_BUCKET not set and NARR_DATA_DIR not found")
-
-
-    else:
-        example_ts = read_narr_timeseries_json(narr_gridxy_data['lat'], narr_gridxy_data['lon'], narr_bucket, narr_file)
+@pytest.fixture()
+def ts(narr_grid_index):
+    try:
+        wind_data = WindData(narr_grid_index, location="FILE", narr_data_dir=TEST_DATA_DIR)
+    except Exception as e:
+        raise RuntimeError(f"could not get wind data : {e}")
+    
+    example_ts = wind_data.read_narr_timeseries_json(MI_LAT, MI_LON, format = "FOD")
     return(example_ts)
     
 class TestFodModel():    
-    def test_fod_model_from_s3_returns_something(self, ts):
+    def test_fod_model_returns_something(self, ts):
         odor_index = 10
         # original code used D for output from this model
         D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
         assert D is not None
 
         
-    def test_fod_model_from_s3_returns_correct_data(self, narr_bucket):
+    def test_fod_model_returns_correct_data(self, ts):
         odor_index = 10
-        MI_LAT = 44.0   # representative Michigan point used in legacy tests
-        MI_LON = -83.0 
-        narr_file = os.getenv("NARR_GRID_LATLON")
-        ts = read_narr_timeseries_json(MI_LAT, MI_LON, narr_bucket, narr_file)
+        
         D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
         assert type(D) == type(np.array([]))
         assert D.shape == (80, 3)
         assert float(D[1,1]) == float(np.float64(0.042728866663428844))
+        
+    def test_fod_model_handles_edge_cases(self, ts):
+        odor_index = 0
+        D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
+        assert D is not None
+        
+    def test_fod_model_json(self, ts):
+        odor_index = 10
+        D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
+        json_data = fod2json(D)
+        assert json_data is not None
+        assert type(json_data) == str
 
-    

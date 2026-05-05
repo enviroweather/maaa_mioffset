@@ -48,6 +48,8 @@ import math
 import h5py
 import sys, os
 import matplotlib
+
+from tests.test_fod import narr_bucket
 # matplotlib.use('Agg') is necessary when the script is called from a PHP application
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -61,7 +63,7 @@ import simplekml
 import shapefile
 from dotenv import load_dotenv
 
-from .narr_data import read_narr_timeseries_h5, read_narr_timeseries_json, filter_narr_timeseries
+from mioffset.narr_data import GridIndex, WindData, filter_narr_timeseries
 
 DEBUG=os.getenv('DEBUG', True)
 
@@ -600,7 +602,7 @@ def fod2json(D:np.ndarray)->str:
     return D_json
 
 
-def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_grid_latlon:str, narr_data_dir:str, narr_data_location:str="S3"):
+def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_grid_latlon:str, narr_data_dir:str="", narr_bucket = "", location:str="S3"):
     """coordinate the run of the FOD model and call functions to save various outputs
 
     Args:
@@ -631,19 +633,14 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
     # 'narr_data_dir' is a bucket name for s3 version
     # TODO parameterize s3 vs h5 versions for comparison
     
-    
 
     # defaults to S3 since HDF5 takes significant disk space and downloads
+    ## UPDATE THIS FOR FLEX file vs s3
+    grid_index = GridIndex("narr_latlon.h5", location=location, bucket=narr_bucket)    
+    wind_data = WindData(grid_index, location = location, bucket = narr_bucket)    
+    narr_timeseries = wind_data.read_narr_timeseries_json(latval, lonval, format = "FOD")
 
-    if narr_data_location == "H5":
-        ts:dict[str, np.ndarray] = read_narr_timeseries_h5(latval, lonval,narr_data_dir, narr_grid_latlon)    
-    else:
-        # default S3
-        ts:dict[str, np.ndarray] = read_narr_timeseries_json(latval, lonval,narr_data_dir, narr_grid_latlon)
-        
-    pc: np.ndarray = ts['pc']
-    wind_speed: np.ndarray = ts['ws']
-    wind_direction: np.ndarray = ts['wd']
+   
     
     # this runs once for flags F and W and twice for B
     for topt in range(tfs,tfe+1):
@@ -656,8 +653,12 @@ def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:s
             # Recall that Xindi's data omits leap days.  So each year
             # contains the same number of hours.
             ts,te=(720,2432)
-            pc, wind_speed, wind_direction = filter_narr_timeseries(pc, wind_speed, wind_direction, ts, te)
         
+        narr_timeseries =  filter_narr_timeseries(narr_timeseries, ts, te)
+        
+        pc: np.ndarray = narr_timeseries['pc']
+        wind_speed: np.ndarray = narr_timeseries['ws']
+        wind_direction: np.ndarray = narr_timeseries['wd']    
         
         # run model        
         D = fod_model(pc=pc, wind_speed=wind_speed, wind_direction=wind_direction, odor_index=odor_index)
@@ -758,17 +759,26 @@ def main():
     if not output_offset_dir:
         raise ValueError("OUTPUT_OFFSET_DIR environment variable is not set")
     
-    narr_grid_latlon=os.getenv("NARR_GRID_LATLON")
-    if not narr_grid_latlon:
-        raise ValueError("NARR_GRID_LATLON environment variable is not set")
+
     
     # this reduces the number of params but re-using the "narr_data_dir" as 
     # either the folder where the H5 files are the bucket name
     # instead create two versions of "fod" since the env vars are very different
     if narr_data_location=="S3":
         narr_data_dir = os.getenv("NARR_BUCKET")
+        narr_grid_latlon = os.getenv("NARR_GRID_LATLON_S3", "")
+        from mioffset.aws import get_aws_config
+        try:
+            aws_config = get_aws_config()
+        except Exception as e:
+            raise ValueError(f"Location S3 but error occurred while initializing AWS config: {e}")  
+        
     else:
         narr_data_dir = os.getenv("NARR_DATA_DIR")
+        narr_grid_latlon = os.getenv("NARR_GRID_LATLON", "")
+        if not narr_grid_latlon:
+            raise ValueError("NARR_GRID_LATLON environment variable is not set")
+
         
     if not narr_data_dir:
         raise ValueError("NARR_DATA_DIR or NARR_BUCKET environment variable is not set")
