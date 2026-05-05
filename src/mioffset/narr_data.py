@@ -24,6 +24,7 @@ Expected environment variables (set via .env / dotenv):
 """
 
 from logging import warning
+from dotenv import load_dotenv
 import numpy as np
 import h5py
 import os, json, tempfile
@@ -341,7 +342,7 @@ class WindData():
     #TODO rename source parameter to narr_data_location and update tests
     # should this be split into two functions (s3 vs file) so that 
     # if reading from a file the bucket does not need to be sent?
-    def read_narr_timeseries_json(self, latval: float, lonval: float):
+    def read_narr_timeseries_json(self, latval: float, lonval: float, format = "FOD"):
 
         # narr_bucket: str = "", narr_grid_latlon: str = "", source: str = "s3",
 
@@ -396,11 +397,14 @@ class WindData():
         ### the data at this point are useful, keyed by year
         ### but the FOD model doesn't do this, it expects a long list of numbers
         ### just don't have a use case right now for data keyed by year
-        fod_data = {}
-        for dataset in DATASETS:
-            fod_data[dataset] = self.prep_dataset_for_fod(narr_timeseries[dataset])
-        
-        return fod_data
+        if format == "FOD":
+            fod_data = {}
+            for dataset in self._datasets:
+                fod_data[dataset] = self.prep_dataset_for_fod(narr_timeseries[dataset])
+            
+            return fod_data
+        else:
+            return narr_timeseries
 
     
     def prep_dataset_for_fod(self,ts_by_year: dict[int, float]):
@@ -478,16 +482,17 @@ class WindData():
         #  pc_1year = h5f['pc'][idy,idx,ts:te]
         
         ts:dict[str, np.ndarray]= {}
-        ts['pc'] = np.array(h5f['PC'][idy,idx,:])
-        ts['ws'] = np.array(h5f['WS'][idy,idx,:])
-        ts['wd'] = np.array(h5f['WD'][idy,idx,:])
+        ts['pc'] = np.array(h5f['PC'][idy,idx,:])   #type:ignore
+        ts['ws'] = np.array(h5f['WS'][idy,idx,:])   #type:ignore
+        ts['wd'] = np.array(h5f['WD'][idy,idx,:])   #type:ignore
 
         h5f.close()
         return ts
 
     #TODO add code to read from S3 using NARR_BUCKET parameter/os environement 
     def read_narr_timeseries_h5(self, latval: float, lonval: float)->dict[str, np.ndarray]:
-        """read in wind data for all available years  from HDF5 files
+        """read in wind data for all available years  from HDF5 files, only from local files 
+        location == "FILE"  so far. 
 
         Args:
             latval (float): latitude value in decimal degrees (CRS unknown)
@@ -525,48 +530,58 @@ class WindData():
         return(narr_ts) 
 
 
-    def filter_narr_timeseries(self, ts:dict, tstart:int=0, tend:int=2920):
-        """filter NARR timeseries data
+def filter_narr_timeseries(self, ts:dict, tstart:int=0, tend:int=2920):
+    """filter NARR timeseries data
 
+    Args:
+        pc (np.ndarray): Pressure data
+        ws (np.ndarray): Wind speed data
+        wd (np.ndarray): Wind direction data
+        ts (int): time start index default=0, start of data
+        te (int): time endindex, default 2920, all data
+
+    Returns:
+        tuple: Filtered data (pc, ws, wd).  If using default ts,te, return all data
+    """
+    return ts['pc'][tstart:tend], ts['ws'][tstart:tend], ts['wd'][tstart:tend]
+
+
+def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
+    """this is used primarily for saving one of these files locally for testing 
+    as one-off function and not needed as part of the FOD model run
         Args:
-            pc (np.ndarray): Pressure data
-            ws (np.ndarray): Wind speed data
-            wd (np.ndarray): Wind direction data
-            ts (int): time start index default=0, start of data
-            te (int): time endindex, default 2920, all data
-
-        Returns:
-            tuple: Filtered data (pc, ws, wd).  If using default ts,te, return all data
-        """
-        return ts['pc'][tstart:tend], ts['ws'][tstart:tend], ts['wd'][tstart:tend]
-
-
-# def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
-#     """this is used primarily for saving one of these files locally for testing 
-#     as one-off function and not needed as part of the FOD model run
+        latval (float): Latitude value.
+        lonval (float): Longitude value.
+        narr_bucket (str): S3 bucket name.
+        narr_grid_latlon (str): Path to the NARR file.
+        local_filefolder (str): Path to the local file folder.
+    Returns:
+        dict[str, str]: A dictionary mapping dataset names to their corresponding 
+            local file paths, which are named for grid x,y, not lat/lon
+    """
     
-#     Args:
-#         latval (float): Latitude value.
-#         lonval (float): Longitude value.
-#         narr_bucket (str): S3 bucket name.
-#         narr_grid_latlon (str): Path to the NARR file.
-#         local_filefolder (str): Path to the local file folder.
+    grid_index = GridIndex("narr_latlon.h5", location="S3", bucket=narr_bucket)
+    (grid_x, grid_y) = grid_index.latlon_to_gridyx(latval, lonval)
+    
+    files_written = {}   
+     
+    wind_data = WindData(grid_index, location = "S3", bucket = narr_bucket)    
+    narr_timeseries = wind_data.read_narr_timeseries_json(latval, lonval, format="not_fod")
+    
+    for dataset in wind_data._datasets:
+        ts_filename =  wind_data.narr_data_json_filename(dataset, grid_x, grid_y)
+        local_file_path = os.path.join(local_filefolder, ts_filename)
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        with open(local_file_path, "w") as f:
+            json.dump(narr_timeseries[dataset], f)
+            files_written[dataset] = local_file_path
+        
+    return files_written
 
-
-#     Returns:
-#         dict[str, str]: A dictionary mapping dataset names to their corresponding 
-#             local file paths, which are named for grid x,y, not lat/lon
-#     """
-#     (grid_x, grid_y) =  latlon_to_gridyx(latval=latval, lonval=lonval, narr_grid_latlon=narr_grid_latlon)
-
-#     files_written = {}    
-#     narr_timeseries = get_narr_timeseries_json(latval, lonval, narr_bucket, narr_grid_latlon)
-#     for dataset in DATASETS:
-#         ts_filename =  narr_data_filename(dataset, grid_x, grid_y)
-#         local_file_path = os.path.join(local_filefolder, ts_filename)
-#         os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-#         with open(local_file_path, "w") as f:
-#             f.writelines(narr_timeseries[dataset])
-#             files_written[dataset] = local_file_path
-            
-#     return files_written
+def save_narr_timeseries_test_data(TEST_MI_LAT = 44.0, TEST_MI_LON = -83.0, save_folder = "tests/data"):
+    from dotenv import load_dotenv
+    load_dotenv()
+    narr_bucket = os.getenv("NARR_BUCKET", "")
+    narr_grid_latlon = os.getenv("NARR_GRID_LATLON", "")
+    files_saved = save_narr_timeseries_s3_to_local(TEST_MI_LAT, TEST_MI_LON, narr_bucket, narr_grid_latlon, save_folder )
+    return files_saved

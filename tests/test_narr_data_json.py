@@ -36,6 +36,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from mioffset.narr_data import DATASETS, GridIndex, WindData
+from mioffset.aws import get_aws_config, get_s3_client
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -49,9 +50,9 @@ TEST_MI_LON = -83.0
 # Must match the filenames in tests/data/ (pc_232_131.json etc.)
 TEST_GRID_X = 232
 TEST_GRID_Y = 131
-# The test JSON fixtures each have 3 years × 10 values
-TEST_YEARS = 3
-TEST_VALUES_PER_YEAR = 10
+# The test JSON fixtures each have 30 years (1979–2008) × 2920 values
+TEST_YEARS = 30
+TEST_VALUES_PER_YEAR = 2920
 TEST_TOTAL_VALUES = TEST_YEARS * TEST_VALUES_PER_YEAR
 
 
@@ -61,6 +62,19 @@ def narr_grid_available() -> bool:
 
 def s3_available() -> bool:
     return bool(os.getenv("NARR_BUCKET") and os.getenv("AWS_ACCESS_KEY_ID"))
+
+
+def aws_fully_configured() -> bool:
+    """Return True only when get_aws_config() succeeds AND NARR_BUCKET is set.
+
+    Uses the same validation logic as the production code so the skip decision
+    matches exactly what WindData needs at runtime.
+    """
+    try:
+        get_aws_config()
+    except (ValueError, Exception):
+        return False
+    return bool(os.getenv("NARR_BUCKET"))
 
 
 # ---------------------------------------------------------------------------
@@ -467,3 +481,126 @@ class TestWindDataReadTimeseriesS3Integration:
         result = wind_data.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
         sizes = {ds: result[ds].size for ds in DATASETS}
         assert len(set(sizes.values())) == 1, f"Dataset sizes differ: {sizes}"
+
+
+# ---------------------------------------------------------------------------
+# TestWindDataRealAWSIntegration
+# (integration — uses live AWS credentials from .env + real NARR_BUCKET)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not (aws_fully_configured() and narr_grid_available()),
+    reason="Valid AWS credentials (.env), NARR_BUCKET, and narr_latlon.h5 are all required",
+)
+class TestWindDataRealAWSIntegration:
+    """End-to-end tests against the real S3 bucket using credentials from .env.
+
+    These tests call get_s3_client() directly — no mocking — so they confirm
+    that the live bucket is accessible and returns the expected data shape.
+    Skipped automatically when get_aws_config() fails or NARR_BUCKET is unset.
+    """
+
+    @pytest.fixture(scope="class")
+    def real_s3_client(self):
+        """Boto3 S3 client built from the .env credentials."""
+        return get_s3_client()
+
+    @pytest.fixture(scope="class")
+    def wind_data_real_s3(self, real_s3_client):
+        """WindData wired to live S3; GridIndex loaded from the real lat/lon file."""
+        gi = GridIndex(TEST_NARR_GRID_LATLON)
+        bucket = os.getenv("NARR_BUCKET", "")
+        wd = WindData(gi, location="S3", bucket=bucket)
+        # Replace the client created inside __init__ with the shared fixture one
+        # (same credentials; avoids an extra session creation per test).
+        wd.s3_client = real_s3_client
+        return wd
+
+    # -- credential / connectivity checks -----------------------------------
+
+    def test_s3_client_can_be_created(self):
+        """get_s3_client() must not raise with the current .env credentials."""
+        client = get_s3_client()
+        assert client is not None
+
+    def test_aws_config_returns_required_keys(self):
+        """get_aws_config() returns a dict with the expected credential keys."""
+        config = get_aws_config()
+        assert isinstance(config, dict)
+        assert "aws_access_key_id" in config
+        assert "aws_secret_access_key" in config
+
+    def test_narr_bucket_is_accessible(self, real_s3_client):
+        """NARR_BUCKET exists and the credentials can reach it."""
+        bucket = os.getenv("NARR_BUCKET", "")
+        try:
+            real_s3_client.head_bucket(Bucket=bucket)
+        except ClientError as exc:
+            pytest.fail(f"Cannot reach bucket '{bucket}': {exc}")
+
+    # -- read_dataset_json_from_s3 ------------------------------------------
+
+    @pytest.mark.parametrize("dataset", ["pc", "ws", "wd"])
+    def test_read_dataset_returns_dict(self, wind_data_real_s3, dataset):
+        result = wind_data_real_s3.read_dataset_json_from_s3(
+            TEST_GRID_X, TEST_GRID_Y, dataset
+        )
+        assert isinstance(result, dict), f"{dataset}: expected dict, got {type(result)}"
+
+    @pytest.mark.parametrize("dataset", ["pc", "ws", "wd"])
+    def test_read_dataset_year_keys_are_digits(self, wind_data_real_s3, dataset):
+        result = wind_data_real_s3.read_dataset_json_from_s3(
+            TEST_GRID_X, TEST_GRID_Y, dataset
+        )
+        for key in result:
+            assert str(key).isdigit(), f"{dataset}: key {key!r} is not a year string"
+
+    @pytest.mark.parametrize("dataset", ["pc", "ws", "wd"])
+    def test_read_dataset_expected_years(self, wind_data_real_s3, dataset):
+        result = wind_data_real_s3.read_dataset_json_from_s3(
+            TEST_GRID_X, TEST_GRID_Y, dataset
+        )
+        assert len(result) == TEST_YEARS, (
+            f"{dataset}: expected {TEST_YEARS} years, got {len(result)}"
+        )
+
+    @pytest.mark.parametrize("dataset", ["pc", "ws", "wd"])
+    def test_read_dataset_expected_values_per_year(self, wind_data_real_s3, dataset):
+        result = wind_data_real_s3.read_dataset_json_from_s3(
+            TEST_GRID_X, TEST_GRID_Y, dataset
+        )
+        for yr, values in result.items():
+            assert len(values) == TEST_VALUES_PER_YEAR, (
+                f"{dataset}[{yr}]: expected {TEST_VALUES_PER_YEAR} values, got {len(values)}"
+            )
+
+    # -- read_narr_timeseries_json (full pipeline) --------------------------
+
+    def test_timeseries_returns_all_datasets(self, wind_data_real_s3):
+        result = wind_data_real_s3.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
+        assert set(result.keys()) == set(DATASETS)
+
+    def test_timeseries_values_are_ndarrays(self, wind_data_real_s3):
+        result = wind_data_real_s3.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
+        for ds in DATASETS:
+            assert isinstance(result[ds], np.ndarray)
+
+    def test_timeseries_arrays_correct_total_length(self, wind_data_real_s3):
+        result = wind_data_real_s3.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
+        for ds in DATASETS:
+            assert result[ds].size == TEST_TOTAL_VALUES, (
+                f"{ds}: expected {TEST_TOTAL_VALUES} values, got {result[ds].size}"
+            )
+
+    def test_timeseries_all_datasets_same_length(self, wind_data_real_s3):
+        result = wind_data_real_s3.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
+        sizes = {ds: result[ds].size for ds in DATASETS}
+        assert len(set(sizes.values())) == 1, f"Dataset sizes differ: {sizes}"
+
+    def test_timeseries_values_are_numeric(self, wind_data_real_s3):
+        result = wind_data_real_s3.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
+        for ds in DATASETS:
+            assert np.issubdtype(result[ds].dtype, np.number), (
+                f"{ds} array dtype is {result[ds].dtype}, expected numeric"
+            )
