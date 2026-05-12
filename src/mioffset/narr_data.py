@@ -412,10 +412,10 @@ class WindData():
         np array with them all smashed together
 
         Args:
-            ts_by_year (dict[int, float]): dictionary of time series keyed by year
+            ts_by_year (dict[int, float]): dictionary of time series keyed by year as returned from read_narr_timeseries_json
 
         Returns:
-            np.array: time series of floats as expected by FOD 
+            np.ndarray: time series of floats in a single array,expected by FOD
         """
         ts_by_year_merged = np.concatenate(list(ts_by_year.values()))
         return ts_by_year_merged
