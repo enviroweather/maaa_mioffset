@@ -407,7 +407,7 @@ class WindData():
             return narr_timeseries
 
     
-    def prep_dataset_for_fod(self,ts_by_year: dict[int, float]):
+    def prep_dataset_for_fod(self,ts_by_year: dict[int, float])->np.ndarray:
         """convert dictionary of timeseries by year (for one data set) into single
         np array with them all smashed together
 
@@ -417,9 +417,7 @@ class WindData():
         Returns:
             np.array: time series of floats as expected by FOD 
         """
-        
-        ts_by_year_nparray = [item for ts in list(ts_by_year.values()) for item in ts]
-        ts_by_year_merged = np.array(ts_by_year_nparray)
+        ts_by_year_merged = np.concatenate(list(ts_by_year.values()))
         return ts_by_year_merged
 
     ############### hdf5 METHODS ##################
