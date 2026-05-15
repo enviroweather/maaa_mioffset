@@ -1,16 +1,17 @@
 """
 tests/test_grid_index.py
 
-Unit and integration tests for the GridIndex class (narr_data.py).
+Unit and integration tests for GridIndex (local file) and GridIndexS3 (S3)
+classes from narr_data.py.
 
-GridIndex docstring shows two usage patterns:
+Usage patterns:
 
   Local file:
       grid_index = GridIndex("narr_latlon.h5")
       idx, idy = grid_index.latlon_to_gridyx(lat, lon)
 
   S3 file:
-      grid_index = GridIndex(grid_key, location="S3", bucket=bucket)
+      grid_index = GridIndexS3(grid_key, bucket=bucket)
       idx, idy = grid_index.latlon_to_gridyx(lat, lon)
 
 Tests are split into two groups:
@@ -33,7 +34,7 @@ import numpy as np
 import pytest
 from botocore.exceptions import ClientError
 
-from mioffset.narr_data import GridIndex
+from mioffset.narr_data import GridIndex, GridIndexS3
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -51,6 +52,22 @@ TEST_GRID_Y = 131
 
 def narr_grid_available() -> bool:
     return os.path.exists(TEST_NARR_GRID_LATLON)
+
+
+def narr_s3_available() -> bool:
+    """Return True when AWS credentials and NARR S3 env vars are all present.
+
+    Loads the .env file (via get_aws_config) so the check works whether or not
+    the variables were already exported to the shell.
+    """
+    from mioffset.aws import get_aws_config
+    try:
+        get_aws_config()  # raises ValueError when credentials are missing
+    except Exception:
+        return False
+    bucket = os.getenv("NARR_BUCKET", "")
+    key = os.getenv("NARR_GRID_LATLON_S3", "")
+    return bool(bucket and key)
 
 
 # ---------------------------------------------------------------------------
@@ -75,9 +92,7 @@ def grid_index_small(small_lat_lon_arrays):
     bypassing all file I/O. Used for pure in-process unit tests."""
     lats, lons = small_lat_lon_arrays
     gi = GridIndex.__new__(GridIndex)
-    gi.location = "File"
     gi.narr_grid_file = ""
-    gi.bucket = ""
     gi._LAT = lats
     gi._LON = lons
     return gi
@@ -89,29 +104,34 @@ def grid_index_real():
     return GridIndex(TEST_NARR_GRID_LATLON)
 
 
+@pytest.fixture(scope="module")
+def grid_index_s3_real():
+    """GridIndexS3 loaded from the real S3 bucket using .env config.
+
+    Reuses a single connection across all tests in this module.
+    Only used by test classes guarded by narr_s3_available().
+    """
+    from mioffset.aws import get_aws_config
+    get_aws_config()          # ensures .env is loaded
+    bucket = os.getenv("NARR_BUCKET", "")
+    key = os.getenv("NARR_GRID_LATLON_S3", "")
+    return GridIndexS3(key, bucket=bucket)
+
+
 # ---------------------------------------------------------------------------
-# TestGridIndexInit — constructor and attribute setup
+# TestGridIndexInit — GridIndex (local file) constructor and attribute setup
 # ---------------------------------------------------------------------------
 
 class TestGridIndexInit:
-    """Test __init__ stores parameters and handles missing data gracefully."""
+    """Test GridIndex __init__ stores parameters and handles missing data gracefully."""
 
-    def test_default_location_is_file(self):
-        # docstring example: GridIndex("narr_latlon.h5") uses File location
+    def test_location_is_file(self):
         gi = GridIndex("/nonexistent/path.h5")
         assert gi.location == "FILE"
 
     def test_narr_grid_file_attribute_stored(self):
         gi = GridIndex("/nonexistent/path.h5")
         assert gi.narr_grid_file == "/nonexistent/path.h5"
-
-    def test_bucket_attribute_stored(self):
-        gi = GridIndex("/nonexistent/path.h5", bucket="my-bucket")
-        assert gi.bucket == "my-bucket"
-
-    def test_location_attribute_stored_s3(self):
-        gi = GridIndex("some/s3/key.h5", location="S3", bucket="")
-        assert gi.location == "S3"
 
     def test_missing_local_file_leaves_lat_lon_none(self):
         # load_grid_file logs a warning rather than raising when the file
@@ -120,12 +140,39 @@ class TestGridIndexInit:
         assert gi.LAT is None
         assert gi.LON is None
 
-    def test_s3_location_without_bucket_leaves_lat_lon_none(self):
-        # docstring S3 example: bucket must be supplied; missing bucket is
-        # handled gracefully (RuntimeError caught inside load_grid_file)
-        gi = GridIndex("some/s3/key.h5", location="S3", bucket="")
+    def test_is_loaded_false_when_file_missing(self):
+        gi = GridIndex("/nonexistent/narr_latlon.h5")
+        assert gi.is_loaded is False
+
+
+# ---------------------------------------------------------------------------
+# TestGridIndexS3Init — GridIndexS3 constructor and attribute setup
+# ---------------------------------------------------------------------------
+
+class TestGridIndexS3Init:
+    """Test GridIndexS3 __init__ stores parameters and handles missing data gracefully."""
+
+    def test_location_is_s3(self):
+        gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+        assert gi.location == "S3"
+
+    def test_narr_grid_file_attribute_stored(self):
+        gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+        assert gi.narr_grid_file == "some/s3/key.h5"
+
+    def test_bucket_attribute_stored(self):
+        gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+        assert gi.bucket == "my-bucket"
+
+    def test_missing_bucket_leaves_lat_lon_none(self):
+        # bucket is required; when empty GridIndexS3 cannot connect to S3
+        gi = GridIndexS3("some/s3/key.h5", bucket="")
         assert gi.LAT is None
         assert gi.LON is None
+
+    def test_is_loaded_false_when_bucket_missing(self):
+        gi = GridIndexS3("some/s3/key.h5", bucket="")
+        assert gi.is_loaded is False
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +201,9 @@ class TestGridIndexReadLocalFile:
         # NARR uses negative (west) longitudes
         assert grid_index_real.LON.min() >= -360
         assert grid_index_real.LON.max() <= 0
+
+    def test_is_loaded_true_after_real_file(self, grid_index_real):
+        assert grid_index_real.is_loaded is True
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +272,6 @@ class TestGridIndexLatLonToGridyx:
         assert idy == TEST_GRID_Y
 
     def test_out_of_bounds_raises_value_error(self, grid_index_real):
-        # docstring usage: calling with invalid lat/lon raises ValueError
         with pytest.raises(ValueError):
             grid_index_real.latlon_to_gridyx(0.0, 0.0)
 
@@ -233,61 +282,144 @@ class TestGridIndexLatLonToGridyx:
 
 
 # ---------------------------------------------------------------------------
-# TestGridIndexLoadErrors — exception handling during grid file loading
+# TestGridIndexLoadErrors — exception handling for GridIndex (local file)
 # ---------------------------------------------------------------------------
 
 class TestGridIndexLoadErrors:
-    """Correct exceptions are raised for each failure mode when loading the
-    lat/lon grid file.  Each test calls the relevant method directly on an
-    instance built with __new__ so that the constructor's exception-swallowing
-    wrapper does not hide the error."""
+    """Correct exceptions are raised when loading from a local file path.
+    Tests call the private read method directly on an instance built with
+    __new__ so that the constructor's exception-swallowing wrapper does not
+    hide the error."""
 
     def _file_instance(self, path: str = "/nonexistent/narr_latlon.h5") -> GridIndex:
-        """GridIndex wired for File mode, bypassing __init__."""
+        """GridIndex built with __new__, bypassing __init__."""
         gi = GridIndex.__new__(GridIndex)
-        gi.location = "File"
         gi.narr_grid_file = path
-        gi.bucket = ""
         gi._LAT = None
         gi._LON = None
         return gi
 
-    def _s3_instance(self, bucket: str = "test-bucket", key: str = "narr_latlon.h5") -> GridIndex:
-        """GridIndex wired for S3 mode, bypassing __init__."""
-        gi = GridIndex.__new__(GridIndex)
-        gi.location = "S3"
-        gi.narr_grid_file = key
-        gi.bucket = bucket
-        gi._LAT = None
-        gi._LON = None
-        return gi
-
-    # 1. source=File, file path does not exist
     def test_file_not_found_raises_runtime_error(self):
         gi = self._file_instance("/nonexistent/narr_latlon.h5")
         with pytest.raises(RuntimeError, match="not found"):
-            gi.read_narr_grid_file_hdf5()
+            gi._read_narr_grid_file_hdf5()
 
-    # 2. source=S3, bucket not set
-    def test_s3_no_bucket_raises_runtime_error(self):
+
+# ---------------------------------------------------------------------------
+# TestGridIndexS3LoadErrors — exception handling for GridIndexS3
+# ---------------------------------------------------------------------------
+
+class TestGridIndexS3LoadErrors:
+    """Correct exceptions are raised for each S3 failure mode.
+    Tests call the private S3 read method directly on an instance built with
+    __new__ to bypass the constructor's exception-swallowing wrapper."""
+
+    def _s3_instance(self, bucket: str = "test-bucket", key: str = "narr_latlon.h5") -> GridIndexS3:
+        """GridIndexS3 built with __new__, bypassing __init__."""
+        gi = GridIndexS3.__new__(GridIndexS3)
+        gi.narr_grid_file = key
+        gi.bucket = bucket
+        gi.s3_client = None
+        gi._LAT = None
+        gi._LON = None
+        return gi
+
+    def test_no_bucket_raises_runtime_error(self):
         gi = self._s3_instance(bucket="")
         with pytest.raises(RuntimeError, match="bucket"):
-            gi.read_narr_lat_lon_s3()
+            gi._read_narr_grid_file_s3()
 
-    # 3. source=S3, S3 client cannot be created (e.g. missing credentials)
     def test_s3_client_creation_failure_raises_runtime_error(self):
         gi = self._s3_instance(bucket="test-bucket")
         with patch("mioffset.narr_data.get_s3_client", side_effect=Exception("No credentials")):
             with pytest.raises(RuntimeError, match="S3 client initialization failed"):
-                gi.read_narr_lat_lon_s3()
+                gi._read_narr_grid_file_s3()
 
-    # 4. source=S3, bucket set but key (file) not found in the bucket
-    def test_s3_key_not_found_raises_client_error(self):
+    def test_s3_key_not_found_raises_runtime_error(self):
+        # The S3 reader wraps all download failures (including ClientError)
+        # in RuntimeError
         gi = self._s3_instance(bucket="test-bucket", key="missing/key.h5")
         mock_s3 = MagicMock()
         mock_s3.download_file.side_effect = ClientError(
             {"Error": {"Code": "404", "Message": "Not Found"}}, "download_file"
         )
-        with patch("mioffset.narr_data.get_s3_client", return_value=mock_s3):
-            with pytest.raises(ClientError):
-                gi.read_narr_lat_lon_s3()
+        gi.s3_client = mock_s3
+        with pytest.raises(RuntimeError):
+            gi._read_narr_grid_file_s3()
+
+
+# ---------------------------------------------------------------------------
+# TestGridIndexS3ReadS3 — integration: live S3 bucket
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+@pytest.mark.s3
+@pytest.mark.skipif(not narr_s3_available(), reason="AWS credentials or NARR S3 config not available")
+class TestGridIndexS3ReadS3:
+    """Load the real lat/lon HDF5 from S3 and verify the arrays it produces.
+
+    Requires NARR_BUCKET, NARR_GRID_LATLON_S3, AWS_ACCESS_KEY_ID, and
+    AWS_SECRET_ACCESS_KEY to be set (typically via .env).
+    """
+
+    def test_is_loaded_after_s3_read(self, grid_index_s3_real):
+        assert grid_index_s3_real.is_loaded is True
+
+    def test_lat_loaded_as_ndarray(self, grid_index_s3_real):
+        assert isinstance(grid_index_s3_real.LAT, np.ndarray)
+
+    def test_lon_loaded_as_ndarray(self, grid_index_s3_real):
+        assert isinstance(grid_index_s3_real.LON, np.ndarray)
+
+    def test_lat_lon_same_shape(self, grid_index_s3_real):
+        assert grid_index_s3_real.LAT.shape == grid_index_s3_real.LON.shape
+
+    def test_lat_range_plausible(self, grid_index_s3_real):
+        assert grid_index_s3_real.LAT.min() >= 0
+        assert grid_index_s3_real.LAT.max() <= 90
+
+    def test_lon_range_plausible(self, grid_index_s3_real):
+        # NARR uses negative (west) longitudes
+        assert grid_index_s3_real.LON.min() >= -360
+        assert grid_index_s3_real.LON.max() <= 0
+
+
+# ---------------------------------------------------------------------------
+# TestGridIndexS3LatLonToGridyx — integration: live S3 bucket
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+@pytest.mark.s3
+@pytest.mark.skipif(not narr_s3_available(), reason="AWS credentials or NARR S3 config not available")
+class TestGridIndexS3LatLonToGridyx:
+    """latlon_to_gridyx returns correct (idx, idy) when the grid was loaded from S3."""
+
+    def test_returns_tuple(self, grid_index_s3_real):
+        result = grid_index_s3_real.latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
+        assert isinstance(result, tuple)
+
+    def test_returns_two_values(self, grid_index_s3_real):
+        result = grid_index_s3_real.latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
+        assert len(result) == 2
+
+    def test_returns_ints(self, grid_index_s3_real):
+        idx, idy = grid_index_s3_real.latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
+        assert isinstance(idx, int)
+        assert isinstance(idy, int)
+
+    def test_known_michigan_point_grid_x(self, grid_index_s3_real):
+        idx, idy = grid_index_s3_real.latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
+        assert idx == TEST_GRID_X
+
+    def test_known_michigan_point_grid_y(self, grid_index_s3_real):
+        idx, idy = grid_index_s3_real.latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
+        assert idy == TEST_GRID_Y
+
+    def test_out_of_bounds_raises_value_error(self, grid_index_s3_real):
+        with pytest.raises(ValueError):
+            grid_index_s3_real.latlon_to_gridyx(0.0, 0.0)
+
+    def test_result_indices_are_non_negative(self, grid_index_s3_real):
+        idx, idy = grid_index_s3_real.latlon_to_gridyx(TEST_MI_LAT, TEST_MI_LON)
+        assert idx >= 0
+        assert idy >= 0

@@ -47,4 +47,20 @@ def check_bucket(s3_client:S3Client, bucket_name):
     except ClientError:
         print(f"Bucket {bucket_name} does not exist or is not accessible")
         return False
-        
+    
+# experimental/WIP hdf5 reader from s3
+# uses yield so need to get all data right away 
+# from the H5 file and then returning
+# so that the tmp_path can be released
+def read_hdf5_from_s3(s3_client:S3Client, bucket, filename):
+    import tempfile, os, h5py
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix='.h5')
+    os.close(tmp_fd)
+    try:
+        s3_client.download_file(bucket, filename, tmp_path)
+        with h5py.File(tmp_path, 'r') as hf:
+            yield hf
+    except Exception as e:
+        raise RuntimeError(f"could not get H5 file from S3 {bucket}/{filename}")
+    finally:
+        os.unlink(tmp_path)

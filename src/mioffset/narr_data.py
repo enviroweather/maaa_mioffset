@@ -31,8 +31,6 @@ import os, json, tempfile
 
 # from dotenv import load_dotenv
 
-from mioffset.aws import get_s3_client
-
 
 
 # the original HDF5 files each had 3 datasets or types of date
@@ -56,7 +54,7 @@ def valid_location(location: str) -> bool:
 
 ### INDEX data
 class GridIndex():
-    """class for reading grid x,y converter file from different sources
+    """class for reading grid x,y converter file from file
     
     typical Usage for local file in this package:   
         grid_file = os.getenv('NARR_GRID_LATLON', "data/narr_latlon.h5")
@@ -68,35 +66,30 @@ class GridIndex():
 
         # ... use idx,idy in model
         
-    typical use for S3 file: 
-        grid_key = os.getenv("NARR_GRID_LATLON_S3")
-        bucket=os.getenv("NARR_BUCKET")
-        grid_index = GridIndex( grid_key, location="S3", bucket=bucket )
-        try:
-            idx, idy = grid_index(lat, lon)
-        except Exception as e:
-            warning(f"Error occurred while converting lat/lon to grid indices: {e}")
+    
     """
     
-    def __init__(self, narr_grid_file: str, location: str="FILE", bucket:str = "" ):
+    location = "FILE"
+    
+    def __init__(self, narr_grid_file: str):
         """class for reading the grid file for wind data
 
         Args:
             narr_grid_file (str): the path to local file OR the key to file in an s3 bucket
-            location (str): location of the file, "S3" or "File"
             bucket (str, optional): name of S3 bucket Defaults to "" but requires if source
         """
 
-        if not valid_location(location):
-            raise ValueError(f"Invalid location: {location}")
-
-        self.location = location.upper()
+        
         self.narr_grid_file = narr_grid_file  # this is a key for s3
-        self.bucket = bucket
         self._LAT: np.ndarray | None = None
         self._LON: np.ndarray | None = None
+        # Only set the default reader if a subclass hasn't already chosen one.
+        # GridIndexS3.__init__ sets _grid_reader before calling super().__init__,
+        # so we must not override it here.
+        if not hasattr(self, '_grid_reader'):
+            self._grid_reader = self._read_narr_grid_file_hdf5
         # try to load the lat/lon data structures for conversion
-        self.load_grid_file()
+        self._load_grid_file()
 
 
     @property
@@ -119,52 +112,13 @@ class GridIndex():
         if not self.is_loaded:
             raise RuntimeError("Grid conversion data was not loaded. Check that the grid file path is correct and readable.")
 
-    def load_grid_file(self):
+    def _load_grid_file(self):
         try:
-            if self.location == "S3":
-                return self.read_narr_lat_lon_s3()
-            else:
-                return self.read_narr_grid_file_hdf5()
+            return self._grid_reader()
         except Exception as e:
             warning(f"Error occurred while loading grid file using location {self.location} and narr_grid_file {self.narr_grid_file}: {e}")
                 
-    def read_narr_lat_lon_s3(self):
-        """read in lat,lon for converting lat lon to climatology grid indices
-
-        Args:
-            narr_grid_latlon (str): For source="file": full path to the NARR input file.
-                For source="s3": S3 key for the file.
-                Defaults to env var NARR_GRID_LATLON (file) or NARR_GRID_LATLON_S3 (s3).
-            source (str): Where to read from - "file" (local disk) or "s3" (AWS S3).
-                Defaults to "file".
-        """
-
-        if not self.bucket:
-            raise RuntimeError("name of S3 bucket not set.")
-
-        try:
-            s3_client = get_s3_client()
-        except Exception as e:
-            raise RuntimeError(f"S3 client initialization failed: {e}")
-        
-        # reading an HD5 filefile from S3
-        # TODO maybe move this into the AWS module, a re-useable function for getting 
-        #   an h5py file handle, that can be used to pull data from any 
-        #   data set.  This could be used by both this and wind data reading functions
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.h5')
-        os.close(tmp_fd)
-        try:
-            s3_client.download_file(self.bucket, self.narr_grid_file, tmp_path)
-            with h5py.File(tmp_path, 'r') as hf:
-                self._LAT = np.array(hf.get('LAT'))
-                self._LON = np.array(hf.get('LON'))
-        finally:
-            os.unlink(tmp_path)
-        
-        return (self._LAT, self._LON)
-    
-    
-    def read_narr_grid_file_hdf5(self):
+    def _read_narr_grid_file_hdf5(self):
         """
         Read the NARR grid file and extract latitude and longitude arrays.
         
@@ -228,6 +182,80 @@ class GridIndex():
         idx:int=int(idx_array[0]) 
 
         return(idx,idy)
+
+
+##################################
+
+from .aws import get_s3_client, read_hdf5_from_s3
+
+class GridIndexS3(GridIndex):
+    """
+    class for reading grid x,y converter file from file, 
+    adapted for reading from S3 instead of file,
+    subclass of GridIndex
+    
+    typical use for S3 file: 
+        from aws import get_s3_client
+        grid_key = os.getenv("NARR_GRID_LATLON_S3")
+        bucket=os.getenv("NARR_BUCKET")
+        s3_client = get_s3_client()
+        grid_index = GridIndex( narr_grid_file = grid_key, bucket=bucket, s3_client = s3_client )
+        try:
+            idx, idy = grid_index(lat, lon)
+        except Exception as e:
+            warning(f"Error occurred while converting lat/lon to grid indices: {e}")
+    """
+    
+    location = "S3"
+        
+    def __init__(self, narr_grid_file: str, bucket:str, s3_client = None):
+        """initialize grid indexer, reading from s3
+
+        Args:
+            narr_grid_file (str): name/key of file in bucket
+            bucket (str): name of bucket to use
+            aws_client (_type_, optional): an AWS S3 client. Defaults to None.
+        """
+        
+
+        self.bucket = bucket
+        self.s3_client = s3_client
+        # set the method that actually reads the file
+        # call by other methods in the class
+        self._grid_reader = self._read_narr_grid_file_s3
+
+        super().__init__(narr_grid_file)
+        
+    def _read_narr_grid_file_s3(self):
+        """
+        read in lat,lon for converting lat lon to climatology grid indices
+        
+        Returns:
+            tuple[float]: A tuple containing the latitude and longitude arrays.
+        """
+
+        if not self.bucket:
+            raise RuntimeError("name of S3 bucket not set.")
+
+        # if no client sent, allow the program to try to 
+        # create a default client reading environment
+        if not self.s3_client:
+            try:
+                self.s3_client = get_s3_client()
+            except Exception as e:
+                raise RuntimeError(f"S3 client initialization failed: {e}")
+        
+        # read_hdf5_from_s3 is a generator that yields the open h5py.File
+        # and cleans up the temp file in its finally block.
+        try:
+            for hf5 in read_hdf5_from_s3(self.s3_client, bucket=self.bucket, filename=self.narr_grid_file):
+                self._LAT = np.array(hf5.get('LAT'))  # type: ignore
+                self._LON = np.array(hf5.get('LON'))  # type: ignore
+        except Exception as e:
+            raise RuntimeError(f"could not get H5 file from S3 {self.narr_grid_file}: {e}")
+
+        return (self._LAT, self._LON)
+        
 
 
 ##################################
