@@ -42,6 +42,7 @@ from mioffset.aws import get_s3_client
 DATASETS = ['pc', 'ws', 'wd']
 LOCATIONS = ["FILE", "S3"]
 
+
 # ws, 10, 120
 def valid_location(location: str) -> bool:
     """ this is a cheap enum style check that it's one of options 
@@ -528,20 +529,23 @@ class WindData():
         return(narr_ts) 
 
 
-def filter_narr_timeseries(self, ts:dict, tstart:int=0, tend:int=2920):
-    """filter NARR timeseries data
+def filter_narr_timeseries(self, ts:dict[str, np.ndarray], tstart:int=0, tend:int=2920)->dict[str, np.ndarray]:
+    """simple method filter NARR timeseries data, limit the timeseries the same
+    way for each key ()
 
     Args:
-        pc (np.ndarray): Pressure data
-        ws (np.ndarray): Wind speed data
-        wd (np.ndarray): Wind direction data
-        ts (int): time start index default=0, start of data
-        te (int): time endindex, default 2920, all data
+        ts: dictionary of time series
+        tstart (int): time start index default=0, start of data
+        tend (int): time end index, default 2920, all data we are using right now. 
 
     Returns:
         tuple: Filtered data (pc, ws, wd).  If using default ts,te, return all data
     """
-    return ts['pc'][tstart:tend], ts['ws'][tstart:tend], ts['wd'][tstart:tend]
+    
+    for key in ts: 
+        ts[key] = ts[key][tstart:tend]
+    
+    return ts
 
 
 def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
