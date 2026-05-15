@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 from os import getenv
 # aws 
 import boto3
+import botocore
+from types_boto3_s3.client import S3Client
 from botocore.exceptions import ClientError
 
 def get_aws_config(dotenv_file = None):
@@ -28,15 +30,15 @@ def get_aws_config(dotenv_file = None):
     return aws_config
 
 
-def get_s3_client(aws_config = None)->boto3.client:
+def get_s3_client(aws_config:dict|None = None)->S3Client:
     if aws_config is None:
-        aws_config = get_aws_config()
+        aws_config:dict = get_aws_config()
     session = boto3.Session(**aws_config)
     s3_client = session.client('s3')
     return(s3_client)
 
 
-def check_bucket(s3_client:boto3.client, bucket_name):
+def check_bucket(s3_client:S3Client, bucket_name):
     
     try:
         s3_client.head_bucket(Bucket=bucket_name)
