@@ -347,6 +347,118 @@ class TestGridIndexS3LoadErrors:
         with pytest.raises(RuntimeError):
             gi._read_narr_grid_file_s3()
 
+    def test_bad_bucket_raises_runtime_error_with_code(self):
+        """NoSuchBucket ClientError is wrapped in RuntimeError with the error code."""
+        gi = self._s3_instance(bucket="nonexistent-bucket-xyz")
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchBucket", "Message": "The bucket does not exist"}},
+            "download_file",
+        )
+        gi.s3_client = mock_s3
+        with pytest.raises(RuntimeError, match="NoSuchBucket"):
+            gi._read_narr_grid_file_s3()
+
+    def test_bad_credentials_raises_runtime_error_with_code(self):
+        """Auth ClientError is wrapped in RuntimeError with the error code."""
+        gi = self._s3_instance()
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError(
+            {"Error": {
+                "Code": "InvalidClientTokenId",
+                "Message": "The security token included in the request is invalid",
+            }},
+            "download_file",
+        )
+        gi.s3_client = mock_s3
+        with pytest.raises(RuntimeError, match="InvalidClientTokenId"):
+            gi._read_narr_grid_file_s3()
+
+
+# ---------------------------------------------------------------------------
+# TestGridIndexS3LoadErrorMessages — _load_error attribute and _check_loaded
+# ---------------------------------------------------------------------------
+
+class TestGridIndexS3LoadErrorMessages:
+    """Failed S3 loads store the reason in _load_error and propagate it via
+    _check_loaded so callers get a useful diagnostic instead of a generic message."""
+
+    def _s3_instance(self, bucket: str = "test-bucket", key: str = "narr_latlon.h5") -> GridIndexS3:
+        """GridIndexS3 built with __new__, bypassing __init__ but fully initialised."""
+        gi = GridIndexS3.__new__(GridIndexS3)
+        gi.narr_grid_file = key
+        gi.bucket = bucket
+        gi.s3_client = None
+        gi._LAT = None
+        gi._LON = None
+        gi._load_error = None
+        gi._grid_reader = gi._read_narr_grid_file_s3
+        return gi
+
+    def test_missing_bucket_stores_load_error(self):
+        """Empty bucket → _load_error is set after _load_grid_file."""
+        gi = self._s3_instance(bucket="")
+        gi._load_grid_file()
+        assert gi._load_error is not None
+
+    def test_missing_bucket_load_error_mentions_bucket(self):
+        gi = self._s3_instance(bucket="")
+        gi._load_grid_file()
+        assert "bucket" in gi._load_error.lower()
+
+    def test_bad_bucket_stores_load_error(self):
+        """NoSuchBucket error is captured in _load_error."""
+        gi = self._s3_instance(bucket="nonexistent-bucket-xyz")
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchBucket", "Message": "The bucket does not exist"}},
+            "download_file",
+        )
+        gi.s3_client = mock_s3
+        gi._load_grid_file()
+        assert gi._load_error is not None
+        assert "NoSuchBucket" in gi._load_error
+
+    def test_bad_credentials_stores_load_error(self):
+        """Auth error is captured in _load_error."""
+        gi = self._s3_instance()
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError(
+            {"Error": {
+                "Code": "InvalidClientTokenId",
+                "Message": "The security token is invalid",
+            }},
+            "download_file",
+        )
+        gi.s3_client = mock_s3
+        gi._load_grid_file()
+        assert gi._load_error is not None
+        assert "InvalidClientTokenId" in gi._load_error
+
+    def test_check_loaded_includes_reason_keyword(self):
+        """RuntimeError from _check_loaded contains the word 'Reason'."""
+        gi = self._s3_instance(bucket="")
+        gi._load_grid_file()
+        with pytest.raises(RuntimeError, match="[Rr]eason"):
+            gi._check_loaded()
+
+    def test_check_loaded_message_includes_load_error_detail(self):
+        """RuntimeError from _check_loaded embeds the stored _load_error text."""
+        gi = self._s3_instance()
+        mock_s3 = MagicMock()
+        mock_s3.download_file.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchBucket", "Message": "does not exist"}},
+            "download_file",
+        )
+        gi.s3_client = mock_s3
+        gi._load_grid_file()
+        with pytest.raises(RuntimeError, match="NoSuchBucket"):
+            gi._check_loaded()
+
+    def test_no_load_error_after_successful_load(self, grid_index_real):
+        """_load_error stays None when file loads successfully."""
+        assert grid_index_real._load_error is None
+
 
 # ---------------------------------------------------------------------------
 # TestGridIndexS3ReadS3 — integration: live S3 bucket

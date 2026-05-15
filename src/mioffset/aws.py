@@ -60,7 +60,11 @@ def read_hdf5_from_s3(s3_client:S3Client, bucket, filename):
         s3_client.download_file(bucket, filename, tmp_path)
         with h5py.File(tmp_path, 'r') as hf:
             yield hf
+    except ClientError as e:
+        raise RuntimeError(
+            f"could not get H5 file from S3 {bucket}/{filename}: {e}"
+        )
     except Exception as e:
-        raise RuntimeError(f"could not get H5 file from S3 {bucket}/{filename}")
+        raise RuntimeError(f"could not get H5 file from S3 {bucket}/{filename}: {e}")
     finally:
         os.unlink(tmp_path)
