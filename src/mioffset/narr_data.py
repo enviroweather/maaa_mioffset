@@ -27,9 +27,12 @@ from logging import warning
 from dotenv import load_dotenv
 import numpy as np
 import h5py
-import os, json, tempfile
+import os, json
 
-# from dotenv import load_dotenv
+from types_boto3_s3.client import S3Client
+from .aws import get_s3_client, read_hdf5_from_s3, check_bucket
+from botocore.exceptions import ClientError
+
 
 
 
@@ -193,9 +196,6 @@ class GridIndex():
 
 ##################################
 
-from .aws import get_s3_client, read_hdf5_from_s3
-from botocore.exceptions import ClientError
-
 class GridIndexS3(GridIndex):
     """
     class for reading grid x,y converter file from file, 
@@ -203,7 +203,7 @@ class GridIndexS3(GridIndex):
     subclass of GridIndex
     
     typical use for S3 file: 
-        from aws import get_s3_client
+
         grid_key = os.getenv("NARR_GRID_LATLON_S3")
         bucket=os.getenv("NARR_BUCKET")
         s3_client = get_s3_client()
@@ -216,7 +216,7 @@ class GridIndexS3(GridIndex):
     
     location = "S3"
         
-    def __init__(self, narr_grid_file: str, bucket:str, s3_client = None):
+    def __init__(self, narr_grid_file: str, bucket:str, s3_client:S3Client|None = None):
         """initialize grid indexer, reading from s3
 
         Args:
@@ -224,12 +224,21 @@ class GridIndexS3(GridIndex):
             bucket (str): name of bucket to use
             aws_client (_type_, optional): an AWS S3 client. Defaults to None.
         """
-        
-
+    
         self.bucket = bucket
+        
+        if not s3_client:
+            try:
+                s3_client = get_s3_client()
+            except Exception as e:
+                raise RuntimeError(f"S3 client initialization failed: {e}")
+            
         self.s3_client = s3_client
-        # set the method that actually reads the file
-        # call by other methods in the class
+        
+        if not check_bucket(s3_client, self.bucket):
+            raise  RuntimeError(f"S3 bucket {self.bucket} invalid or not found")
+        
+        # class customization: set the method that actually reads the file
         self._grid_reader = self._read_narr_grid_file_s3
 
         super().__init__(narr_grid_file)
@@ -242,20 +251,13 @@ class GridIndexS3(GridIndex):
             tuple[float]: A tuple containing the latitude and longitude arrays.
         """
 
-        if not self.bucket:
-            raise RuntimeError("name of S3 bucket not set.")
-
-        # if no client sent, allow the program to try to 
-        # create a default client reading environment
-        if not self.s3_client:
-            try:
-                self.s3_client = get_s3_client()
-            except Exception as e:
-                raise RuntimeError(f"S3 client initialization failed: {e}")
+        # defensive - check the bucket every time to let user know it's a bucket issue not file issue
+        if not check_bucket(s3_client = self.s3_client, bucket_name= self.bucket):
+            raise  RuntimeError(f"S3 bucket {self.bucket} invalid or not found")
         
-        # read_hdf5_from_s3 is a generator that yields the open h5py.File
-        # and cleans up the temp file in its finally block.
         try:
+            # read_hdf5_from_s3 is a generator that yields the open h5py.File
+            # and cleans up the temp file in its finally block,which is why we are using a loop
             for hf5 in read_hdf5_from_s3(self.s3_client, bucket=self.bucket, filename=self.narr_grid_file):
                 self._LAT = np.array(hf5.get('LAT'))  # type: ignore
                 self._LON = np.array(hf5.get('LON'))  # type: ignore
@@ -540,7 +542,7 @@ class WindDataS3(WindData):
     
     location:str = "S3"
     
-    def __init__(self, grid_index: GridIndex,  bucket:str, narr_data_dir:str):
+    def __init__(self, grid_index: GridIndex,  bucket:str, narr_data_dir:str, s3_client:S3Client|None = None):
         """_summary_
             
         Args:
@@ -556,11 +558,14 @@ class WindDataS3(WindData):
         """
         
         self.bucket = bucket
-        try:
-            self.s3_client = get_s3_client()
-        except Exception as e:
-            raise ValueError(f"Location is S3 but failed to initialize S3 client: {e}")
-
+        if not s3_client:
+            try:
+                self.s3_client = get_s3_client()
+            except Exception as e:
+                raise ValueError(f"Location is S3 but failed to initialize S3 client: {e}")
+        else:
+            self.s3_client = s3_client
+        
         super().__init__(grid_index, narr_data_dir)
 
 
@@ -583,6 +588,7 @@ class WindDataS3(WindData):
         
         # ts = time series
         ts_by_year_file = self.narr_data_json_filename(dataset, grid_x, grid_y)
+        
         
         try:
             response = self.s3_client.get_object(Bucket=self.bucket, Key=ts_by_year_file)
@@ -660,7 +666,7 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
     
     files_written = {}   
      
-    wind_data = WindData(grid_index, location = "S3", bucket = narr_bucket)    
+    wind_data = WindDataS3(grid_index, bucket = narr_bucket, )    
     narr_timeseries = wind_data.read_narr_timeseries_json(latval, lonval, format="not_fod")
     
     for dataset in wind_data._datasets:
