@@ -37,8 +37,11 @@ import numpy as np
 import pytest
 from botocore.exceptions import ClientError
 
-from mioffset.narr_data import DATASETS, GridIndex, WindData, WindDataS3
+from mioffset.narr_data import DATASETS, GridIndex, WindData, WindDataS3, wind_data_factory
 from mioffset.aws import get_aws_config, get_s3_client
+
+# Import shared test utilities from conftest
+from conftest import narr_grid_available, aws_fully_configured
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -56,19 +59,6 @@ TEST_GRID_Y = 131
 TEST_YEARS = 30
 TEST_VALUES_PER_YEAR = 2920
 TEST_TOTAL_VALUES = TEST_YEARS * TEST_VALUES_PER_YEAR
-
-
-def narr_grid_available() -> bool:
-    return os.path.exists(TEST_NARR_GRID_LATLON)
-
-
-def aws_fully_configured() -> bool:
-    """Return True only when get_aws_config() succeeds AND NARR_BUCKET is set."""
-    try:
-        get_aws_config()
-    except (ValueError, Exception):
-        return False
-    return bool(os.getenv("NARR_BUCKET"))
 
 
 # ---------------------------------------------------------------------------
@@ -615,3 +605,49 @@ class TestWindDataS3Integration:
             assert np.issubdtype(result[ds].dtype, np.number), (
                 f"{ds} array dtype is {result[ds].dtype}, expected numeric"
             )
+
+
+# ---------------------------------------------------------------------------
+# TestWindDataFactoryS3Integration
+# (integration — live test for wind_data_factory(location="S3"))
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+@pytest.mark.s3
+@pytest.mark.skipif(
+    not aws_fully_configured(),
+    reason="Valid AWS credentials (.env) and NARR_BUCKET are required",
+)
+class TestWindDataFactoryS3Integration:
+    """Live integration tests for the S3 branch of wind_data_factory.
+
+    No mocking is used here. These tests run only when AWS config and bucket
+    are available via environment/.env.
+    """
+
+    @pytest.fixture(scope="class")
+    def s3_grid_key(self):
+        key = os.getenv("NARR_GRID_LATLON_S3", "")
+        if not key:
+            pytest.skip("NARR_GRID_LATLON_S3 is required for S3 factory integration tests")
+        return key
+
+    @pytest.fixture(scope="class")
+    def wind_data_from_factory(self, s3_grid_key):
+        bucket = os.getenv("NARR_BUCKET", "")
+        s3_client = get_s3_client()
+        return wind_data_factory(
+            location="S3",
+            narr_grid_file=s3_grid_key,
+            narr_data_dir=TEST_DATA_DIR,
+            narr_bucket=bucket,
+            s3_client=s3_client,
+        )
+
+    def test_factory_returns_s3_instance(self, wind_data_from_factory):
+        assert isinstance(wind_data_from_factory, WindDataS3)
+        assert wind_data_from_factory.location == "S3"
+
+    def test_factory_instance_reads_timeseries(self, wind_data_from_factory):
+        result = wind_data_from_factory.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
+        assert set(result.keys()) == set(DATASETS)

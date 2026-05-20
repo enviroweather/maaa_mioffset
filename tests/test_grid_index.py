@@ -36,6 +36,9 @@ from botocore.exceptions import ClientError
 
 from mioffset.narr_data import GridIndex, GridIndexS3
 
+# Import shared test utilities from conftest
+from conftest import narr_grid_available, narr_s3_available
+
 # ---------------------------------------------------------------------------
 # Shared constants
 # ---------------------------------------------------------------------------
@@ -48,26 +51,6 @@ TEST_MI_LAT = 44.0
 TEST_MI_LON = -83.0
 TEST_GRID_X = 232
 TEST_GRID_Y = 131
-
-
-def narr_grid_available() -> bool:
-    return os.path.exists(TEST_NARR_GRID_LATLON)
-
-
-def narr_s3_available() -> bool:
-    """Return True when AWS credentials and NARR S3 env vars are all present.
-
-    Loads the .env file (via get_aws_config) so the check works whether or not
-    the variables were already exported to the shell.
-    """
-    from mioffset.aws import get_aws_config
-    try:
-        get_aws_config()  # raises ValueError when credentials are missing
-    except Exception:
-        return False
-    bucket = os.getenv("NARR_BUCKET", "")
-    key = os.getenv("NARR_GRID_LATLON_S3", "")
-    return bool(bucket and key)
 
 
 # ---------------------------------------------------------------------------
@@ -150,29 +133,39 @@ class TestGridIndexInit:
 # ---------------------------------------------------------------------------
 
 class TestGridIndexS3Init:
-    """Test GridIndexS3 __init__ stores parameters and handles missing data gracefully."""
+    """Test GridIndexS3 __init__ stores parameters and handles missing data gracefully.
+    
+    Uses mocks for bucket validation to avoid requiring real AWS connectivity for 
+    simple unit tests of attribute storage.
+    """
 
     def test_location_is_s3(self):
-        gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
-        assert gi.location == "S3"
+        with patch("mioffset.narr_data.check_bucket", return_value=True):
+            gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+            assert gi.location == "S3"
 
     def test_narr_grid_file_attribute_stored(self):
-        gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
-        assert gi.narr_grid_file == "some/s3/key.h5"
+        with patch("mioffset.narr_data.check_bucket", return_value=True):
+            gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+            assert gi.narr_grid_file == "some/s3/key.h5"
 
     def test_bucket_attribute_stored(self):
-        gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
-        assert gi.bucket == "my-bucket"
+        with patch("mioffset.narr_data.check_bucket", return_value=True):
+            gi = GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+            assert gi.bucket == "my-bucket"
 
     def test_missing_bucket_leaves_lat_lon_none(self):
-        # bucket is required; when empty GridIndexS3 cannot connect to S3
-        gi = GridIndexS3("some/s3/key.h5", bucket="")
-        assert gi.LAT is None
-        assert gi.LON is None
+        # bucket is required; when empty GridIndexS3 constructor should succeed
+        # but LAT/LON should be None. Mock check_bucket to return True even for empty bucket.
+        with patch("mioffset.narr_data.check_bucket", return_value=True):
+            gi = GridIndexS3("some/s3/key.h5", bucket="")
+            assert gi.LAT is None
+            assert gi.LON is None
 
     def test_is_loaded_false_when_bucket_missing(self):
-        gi = GridIndexS3("some/s3/key.h5", bucket="")
-        assert gi.is_loaded is False
+        with patch("mioffset.narr_data.check_bucket", return_value=True):
+            gi = GridIndexS3("some/s3/key.h5", bucket="")
+            assert gi.is_loaded is False
 
 
 # ---------------------------------------------------------------------------
@@ -315,25 +308,31 @@ class TestGridIndexS3LoadErrors:
     __new__ to bypass the constructor's exception-swallowing wrapper."""
 
     def _s3_instance(self, bucket: str = "test-bucket", key: str = "narr_latlon.h5") -> GridIndexS3:
-        """GridIndexS3 built with __new__, bypassing __init__."""
+        """GridIndexS3 built with __new__, bypassing __init__. 
+        
+        Includes a MagicMock s3_client so error-handling tests work correctly.
+        """
         gi = GridIndexS3.__new__(GridIndexS3)
         gi.narr_grid_file = key
         gi.bucket = bucket
-        gi.s3_client = None
+        gi.s3_client = MagicMock()  # Mock s3_client instead of None
         gi._LAT = None
         gi._LON = None
         return gi
 
     def test_no_bucket_raises_runtime_error(self):
         gi = self._s3_instance(bucket="")
-        with pytest.raises(RuntimeError, match="bucket"):
-            gi._read_narr_grid_file_s3()
+        with patch("mioffset.narr_data.check_bucket", return_value=False):
+            with pytest.raises(RuntimeError, match="bucket"):
+                gi._read_narr_grid_file_s3()
 
     def test_s3_client_creation_failure_raises_runtime_error(self):
         gi = self._s3_instance(bucket="test-bucket")
-        with patch("mioffset.narr_data.get_s3_client", side_effect=Exception("No credentials")):
-            with pytest.raises(RuntimeError, match="S3 client initialization failed"):
-                gi._read_narr_grid_file_s3()
+        # Mock check_bucket to pass, but then mock get_s3_client within the download path to fail
+        with patch("mioffset.narr_data.check_bucket", return_value=True):
+            with patch("mioffset.aws.get_s3_client", side_effect=Exception("No credentials")):
+                with pytest.raises(RuntimeError, match="could not get H5 file"):
+                    gi._read_narr_grid_file_s3()
 
     def test_s3_key_not_found_raises_runtime_error(self):
         # The S3 reader wraps all download failures (including ClientError)
