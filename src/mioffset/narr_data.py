@@ -643,9 +643,60 @@ class WindDataS3(WindData):
             ts['wd'] = np.array(h5f['WD'][idy,idx,:])   #type:ignore
 
         return ts    
+
+
+##################################    
+
+def wind_data_factory(location = "S3", 
+                      narr_grid_file:str ="", narr_data_dir:str="", 
+                      narr_bucket:str = "", s3_client:S3Client|None = None)->WindData:
+
+    """Factory function to create the appropriate WindData instance based on location.
+
+    Constructs and returns a fully initialised WindData (for local files) or
+    WindDataS3 (for S3) object, each paired with the matching GridIndex.
+
+    Args:
+        location (str): Where to read data from. Must be ``"S3"`` or ``"FILE"``.
+            Defaults to ``"S3"``.
+        narr_grid_file (str): Path (or S3 key) to the NARR lat/lon grid HDF5 file
+            used to convert lat/lon coordinates to grid indices.
+        narr_data_dir (str): Local directory (or S3 prefix) containing the
+            per-gridpoint JSON files organised as
+            ``<dataset>/<dataset>_<x>_<y>.json``.
+        narr_bucket (str): Name of the S3 bucket. Required when
+            ``location="S3"``, ignored otherwise.
+        s3_client (S3Client | None): An already-initialised boto3 S3 client.
+            When ``None`` and ``location="S3"``, a client is created with
+            default credentials.
+
+    Returns:
+        WindData: A WindData-compatible instance to retrieve wind data.
+
+    Raises:
+        RuntimeError: If ``location="S3"`` but the provided client or bucket is
+            invalid / unreachable.
+        RuntimeError: If ``location`` is not ``"FILE"`` or ``"S3"``.
+    """
+
+    if location == "S3":
+        if not s3_client and not check_bucket(s3_client, narr_bucket):
+            raise RuntimeError(f"requested S3 access but invalid client {s3_client} or bucket {narr_bucket}")
+
+        grid_index = GridIndexS3(narr_grid_file= narr_grid_file, bucket=narr_bucket, s3_client= s3_client)
+        wind_data = WindDataS3(grid_index, bucket = narr_bucket, narr_data_dir=narr_data_dir)
+    elif location == "FILE":
+        grid_index = GridIndex(narr_grid_file)
+        wind_data = WindData(grid_index, narr_data_dir)
+        
+    else:
+        raise RuntimeError(f"when getting wind data, location must be FILE or S3, not {location}")
     
+    return(wind_data)
 
 ##################################
+# TEMPORARY FUNCTIONS TO CONVERT DATA
+
 
 def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
     """this is used primarily for saving one of these files locally for testing 
