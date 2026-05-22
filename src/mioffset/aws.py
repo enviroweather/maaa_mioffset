@@ -31,8 +31,7 @@ def get_aws_config(dotenv_file = None):
 
 
 def get_s3_client(aws_config:dict|None = None)->S3Client:
-    if aws_config is None:
-        aws_config:dict = get_aws_config()
+    aws_config:dict = aws_config or get_aws_config()
     session = boto3.Session(**aws_config)
     s3_client = session.client('s3')
     return(s3_client)
