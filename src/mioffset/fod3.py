@@ -11,8 +11,13 @@
 #   Modified by 
 #
 #	alterations for using in PHP application by Tracy Aichle
-#   
-#   April 2026 refactoring (Pat Bills, MSU ICER)
+#   May 2026 (Pat Bills, MSU ICER)
+#     + added methods create other map and image formats for API outputs
+#     + split functions to 1) create object 2) save to disk OR 3) convert for api
+#     + use new wind data factory method for flex file location (s3 vs file)
+#     + functions to save KML and SVG for api use, and convert to Base64 for JSON compatibility
+#     - move main 'runners' into mioffset.py - this is no longer an executable script
+#   April 2026 refactoring 
 #     + refactored into distinct functions for optimization and testing 
 #     + functions are split into modules (narr_data.py, etc)
 #     + configured to use .env for configuration instead of fod_config.py
@@ -35,35 +40,37 @@
 #
 ########################################################################
 
-print("MIOFFSET DEVELOPMENT VERSION ONLY - NOT FOR PRODUCTION USE")
+print("MIOFFSET DEVELOPMENT VERSION - NOT FOR PRODUCTION USE")
 
 # #------------------------Imports-------------------------
 
+# from python stdlib
 import json
 
-import numpy as np
-# import numpy.typing as npt
-# from numpy.typing import NDArray
 import math
-import h5py
 import sys, os
-import matplotlib
-
-from tests.test_fod import narr_bucket
-# matplotlib.use('Agg') is necessary when the script is called from a PHP application
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import time
+import io
 import zipfile
-import matplotlib.cm as cm
+
+
+# old mapping files
 from geopy import Point
 # vincenty method is deprecated, use geodesic method instead
-from geopy.distance import geodesic
 import simplekml
 import shapefile
+
+# environment
 from dotenv import load_dotenv
 
-from mioffset.narr_data import GridIndex, WindData, filter_narr_timeseries
+# response prep
+import base64
+
+# for model
+import numpy as np
+import matplotlib.pyplot as plt
+from geopy.distance import geodesic
+from mioffset.narr_data import WindData, filter_narr_timeseries, wind_data_factory
+
 
 DEBUG=os.getenv('DEBUG', True)
 
@@ -102,19 +109,7 @@ def add_prefix_to_filename(full_path: str, prefix: str = "", prefix_sep: str = "
 
 
 ####### VISUALIZATIONS ##########
-
-def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
-    """create wind plots from model and save as PNGs
-
-    Args:
-        D (np.ndarray): Setback distance, computed as a function of wind stability class using OFFSET look-up tables (float)
-        E (float): Total Odor Emission Factor (float)
-        topt (int): time option
-        output_offset_dir (str): folder to save these in
-        file_prefix (str): optional prefix to add to file names to make them unique
-    """
-    #------Plot footprint on polar axes with standard white background-------
-
+def footprint_plots(D: np.ndarray, E: float, topt: int):
     dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.
     #   1.  First image: all three footprints (1.5%,3%,5%)
     
@@ -157,17 +152,58 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
         ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
         + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
     # Shrink current axis by 20%
+    
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8])
+    ax.set_position((box.x0, box.y0, box.width * 0.8, box.height * 0.8))
 
     # Put a legend to the right of the current axis
     lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
     lg.draw_frame(False)
+    return(plt)
+
+
+def matplotlib_to_svg(plt)->str:
+    """get an SVG string from a matplotlib plot. This has probably been 
+    written 1,000s of times in code bases
     
+    Args:
+        plt: Matplotli
+        
+    Returns:
+        str: SVG code for the plot
+    
+    """
+    
+    plot_image = io.StringIO()
+    
+    plt.savefig(plot_image, format='svg')
+    plot_image.seek(0)  # rewind the data
+    plot_svg = plot_image.getvalue() # svg string
+
+    return(plot_svg)
+
+       
+
+def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
+    """create wind plots from model and save as PNGs
+
+    Args:
+        D (np.ndarray): Setback distance, computed as a function of wind stability class using OFFSET look-up tables (float)
+        E (float): Total Odor Emission Factor (float)
+        topt (int): time option
+        output_offset_dir (str): folder to save these in
+        file_prefix (str): optional prefix to add to file names to make them unique
+    """
+    #------Plot footprint on polar axes with standard white background-------
+
+    plt = footprint_plots(D, E, topt)
+    ## the only difference for "topt" is the filename here, move this to a parameter?
     if(topt == 1):
         plot_file_name = "image_footprint_3inone_FY.png"         
     elif(topt == 2):
-        plot_file_name=  "image_footprint_3inone_wind_speed.png" 
+        plot_file_name=  "image_footprint_3inone_Warm_Season.png" 
+    else:
+        raise RuntimeError("invalid time option")
         
     footprints_plot_file_path = add_prefix_to_filename(os.path.join(output_offset_dir, plot_file_name), file_prefix)
     plt.savefig(footprints_plot_file_path, format='png', dpi=300, transparent=True)
@@ -301,20 +337,51 @@ def write_setback_text_table(text_file_name: str, table_text: str):# D: np.ndarr
 
 ########## MAPPING ###########
 
-def write_kml(LL, E, latval, lonval, kml_file_name):
-    """create kml and save file from LL array 
+def fod_plot_to_ll(D, lat:float, lon:float)->np.ndarray:
+    """convert setback distance output from FOD model into a the 
+    lat, lon coordinates of set-back radius from the 
+    center point for placing on a map 
 
     Args:
-        LL (np array): set backs in lat/lon
-        latval (float): point source latitude
-        lonval (float): point source longitude
-        kml_file_name (str): full path to kml file to save
+        D (_type_): output from 
+        lat (float): latitude of center point
+        lon (float): longitude of center point
     """
     
+    dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.        
+    
+    LL:np.ndarray = np.empty((81,3,2), dtype=float, order='F')        
+    
+    for d in range(0,dbin.size):
+        for p in range(0,3):
+            LL[d,p,1]=geodesic(miles=D[d,p]).destination(Point(lat, lon), dbin[d]).latitude
+            LL[d,p,0]=geodesic(miles=D[d,p]).destination(Point(lat, lon), dbin[d]).longitude
+    
+    # does this rotate or flip it?
+    LL[80,:,:]=LL[0,:,:]
+    
+    return(LL)
+    
+    
+def fod_kml(LL, E, lat, lon):
+    """create KML formatted setback polygons for placing on a map
+
+    Args:
+        LL (np.ndarray): shape (81, 3, 2) array from fod_plot_to_ll where
+            axis 0 = direction bins (80 + closing point),
+            axis 1 = footprint level (0=5%, 1=3%, 2=1.5%),
+            axis 2 = [longitude, latitude]
+        E (float): Total Odor Emission Factor
+        lat (float): latitude of the point source
+        lon (float): longitude of the point source
+        
+    Returns:
+        str: XML-formatted KML 
+    """
     PLACE_MARK = 'http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png' 
 
     kml = simplekml.Kml()
-    pnt=kml.newpoint(name="", coords=[(lonval,latval)])  # Source
+    pnt=kml.newpoint(name="", coords=[(lon,lat)])  # Source
     pnt.name = 'E=' +str(E)
     pnt.style.iconstyle.color = simplekml.Color.black
     pnt.style.iconstyle.scale = 1 
@@ -336,14 +403,152 @@ def write_kml(LL, E, latval, lonval, kml_file_name):
     pol.style.linestyle.width = 10
     pol.style.polystyle.outline = 1
     pol.style.polystyle.fill = 0
-            
+    return(kml)
+
+    # string is kml.kml()
+    
+def write_kml(LL, E, lat, lon, kml_file_name):
+    """create kml and save file from LL array 
+
+    Args:
+        LL (np array): set backs in lat/lon
+        latval (float): point source latitude
+        lonval (float): point source longitude
+        kml_file_name (str): full path to kml file to save
+    """
+    
+    kml = fod_kml(LL, E, lat, lon)     
     kml.save(kml_file_name)  
 
 
+def kml_encode_base64(kml:str|simplekml.Kml, kml_file_name="kml"):
+    """
+    Convert KML content to a URL-safe Base64-encoded dictionary payload 
+    (suitable for incorporation into JSON response)
+    Accepts either a `simplekml.Kml` object or a raw KML XML string, encodes the
+    KML content as UTF-8, then returns a dictionary where the key is the provided
+    file name and the value is the Base64-encoded bytes.
+    Args:
+        kml (str | simplekml.Kml):
+            KML content to encode. Must be either:
+            - a `simplekml.Kml` instance (uses its `.kml()` output), or
+            - a raw KML XML string.
+        kml_file_name (str, optional):
+            Key name to use in the returned dictionary. Defaults to `"kml"`.
+    Returns:
+        dict[str, bytes]:
+            A dictionary containing one entry:
+            `{kml_file_name: <urlsafe_base64_encoded_kml_bytes>}`.
+    Raises:
+        RuntimeError:
+            If `kml` is neither a `simplekml.Kml`-like object (with `.kml()`) nor a string.
+    """
+    if hasattr(kml, 'kml'):
+        kml_xml:str = kml.kml()
+    elif isinstance(kml, str):
+        kml_xml:str = kml        
+    else:
+        # don't know what this is
+        raise RuntimeError("kml sent to kml2base64 is not a recognized type (kml or xml str)")
+    kmlb64 = base64.urlsafe_b64encode(kml_xml.encode('utf-8'))
+    kml_dict = {kml_file_name:kmlb64}
+    return kml_dict
+
+
+def kml_decode_base64(kml_dict: dict[str, bytes | str], kml_file_name: str = "kml") -> str:
+    """Decode URL-safe Base64 KML payload back into XML text.
+
+    Args:
+        kml_dict (dict[str, bytes | str]):
+            Dictionary payload containing one encoded KML value.
+        kml_file_name (str, optional):
+            Key name expected in kml_dict. Defaults to "kml".
+
+    Returns:
+        str: Decoded KML XML string.
+
+    Raises:
+        RuntimeError:
+            If the payload is invalid or cannot be decoded as UTF-8 XML.
+    """
+    if not isinstance(kml_dict, dict):
+        raise RuntimeError("kml_decode_base64 expects a dictionary payload")
+
+    if kml_file_name not in kml_dict:
+        raise RuntimeError(f"kml_decode_base64 missing key '{kml_file_name}' in payload")
+
+    kmlb64 = kml_dict[kml_file_name]
+    if isinstance(kmlb64, str):
+        kmlb64_bytes = kmlb64.encode("ascii")
+    elif isinstance(kmlb64, (bytes, bytearray)):
+        kmlb64_bytes = bytes(kmlb64)
+    else:
+        raise RuntimeError("encoded KML value must be bytes or string")
+
+    try:
+        kml_xml_bytes = base64.urlsafe_b64decode(kmlb64_bytes)
+        kml_xml = kml_xml_bytes.decode("utf-8")
+    except Exception as exc:
+        raise RuntimeError("failed to decode Base64 KML payload") from exc
+
+    return kml_xml
+
+
+def fod_geojson(LL: np.ndarray, E: float, lat: float, lon: float) -> dict:
+    """Create a GeoJSON FeatureCollection equivalent to fod_kml.
+
+    Produces a point feature for the odor source and three polygon features
+    for the 5%, 3%, and 1.5% setback footprints.
+
+    Args:
+        LL (np.ndarray): shape (81, 3, 2) array from fod_plot_to_ll where
+            axis 0 = direction bins (80 + closing point),
+            axis 1 = footprint level (0=5%, 1=3%, 2=1.5%),
+            axis 2 = [longitude, latitude]
+        E (float): Total Odor Emission Factor
+        lat (float): latitude of the point source
+        lon (float): longitude of the point source
+
+    Returns:
+        dict: GeoJSON FeatureCollection with four features (but not JSON str):
+              one Point (source) and three Polygons (1.5%, 3%, 5% footprints)
+    """
+    def _ring(level_idx: int) -> list:
+        # LL[d, p, 0] = lon, LL[d, p, 1] = lat — GeoJSON uses [lon, lat]
+        return LL[:, level_idx, :].tolist()
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {"name": "Odor source", "odor_emission_factor": E},
+        },
+        {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [_ring(2)]},
+            "properties": {"name": "1.5% footprint", "level": "1.5%"},
+        },
+        {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [_ring(1)]},
+            "properties": {"name": "3% footprint", "level": "3%"},
+        },
+        {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [_ring(0)]},
+            "properties": {"name": "5% footprint", "level": "5%"},
+        },
+    ]
+
+    return {"type": "FeatureCollection", "features": features}
+
         
-def write_pointsource_shapefile(shapefile_name_stem:str, lonval:float, latval:float):
+def write_pointsource_shapefile(shapefile_name_stem:str, lonval:float, latval:float)->list[str]:
     """save single point shape file for mapping point source using pyshp
     https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
+    
+    SIDE EFFECT: files written to disk
+
     
     Args:
         shapefile_name_stem (str): base file name to use for components of shapefile
@@ -364,12 +569,13 @@ def write_pointsource_shapefile(shapefile_name_stem:str, lonval:float, latval:fl
         f"{shapefile_name_stem}.shx",                
     ])
 
-            
 
-def write_footprint_shapefile(shape_file_name_stem: str, LL: np.ndarray):
+def write_footprint_shapefile(shape_file_name_stem: str, LL: np.ndarray)->list[str]:
     """Write the footprint polygon shapefile and return list of 
     filenames created
 
+    SIDE EFFECT: files written to disk
+    
     Args:
         shape_file_name_stem (str): the 'stem' of the file, a full path with 
         a file name and no extension
@@ -395,14 +601,19 @@ def write_footprint_shapefile(shape_file_name_stem: str, LL: np.ndarray):
     ]
 
 
-def write_zipfile(zipfile_path: str, zip_files: list[str]):
+def write_zipfile(zipfile_path: str, zip_files: list[str])->str:
     """given list of files and zip file path, create and save
     a zip file.  The items in the zip file have their directory 
     stripped so unzipping will go directly into the target folder
+    
+    SIDE EFFECT: files written to disk
+
 
     Args:
         zipfile_path (str): where to store the zip file
         zip_files (list[str]): list of full paths to files to include
+    Returns:
+        str: path to zip file saved
     """
     shape_zip = zipfile.ZipFile(zipfile_path, 'w')
 
@@ -421,21 +632,18 @@ def write_zipfile(zipfile_path: str, zip_files: list[str]):
         
 def fod_model(pc: np.ndarray, wind_speed:np.ndarray, wind_direction:np.ndarray, odor_index:int):
     """calculates an aray of setback distances in miles given wind
-    characterists for a coordinate in the state of Michigan 
+    characteristics for a coordinate in the state of Michigan 
 
     Args:
-        latval (float): latitude of the point
-        lonval (float): longitude of the point
-        o (np.ndarray): Odor index
         pc (np.ndarray): time series of ?
         wind_speed (np.ndarray): time series of wind speeds
         wind_direction (np.ndarray): time series of wind directions
-        topt (int, optional): time options   Defaults to 1.
+        odor_index (int): odor index calculated from building size and type
     Returns:
         np.array 3 sets of 80 values (shape = (80,3)), 5% 3%, 1.5% setback distance
     """
 
-    # see variable list in comments above
+    # renamed for comparability with original code
     E = odor_index
     #-----------------------Wind direction processing------------------------
     
@@ -601,189 +809,3 @@ def fod2json(D:np.ndarray)->str:
     
     return D_json
 
-
-def fod(latval:float, lonval:float, odor_index:int, file_prefix:str, time_flag:str, output_offset_dir:str, narr_grid_latlon:str, narr_data_dir:str="", narr_bucket = "", location:str="S3"):
-    """coordinate the run of the FOD model and call functions to save various outputs
-
-    Args:
-        latval (float): latitude of point source   
-        lonval (float): longitude of point source
-        odor_index (int): odor index value
-        file_prefix (str): prefix for output files
-        LAT (np.ndarray): array of latitudes
-        LON (np.ndarray): array of longitudes
-        time_flag (str, optional): time flag for dataset selection. Defaults to TIME_FLAG on config file
-        output_offset_dir (str, optional): directory for output files  Defaults to OUTPUT_OFFSET_DIR.
-    """
-    
-    E = odor_index # doing this here to match legacy code and downstream fn's
-    
-    if(time_flag == 'F'):
-        tfs=1;tfe=1 #Full year dataset: 1 Jan - 31 Dec; run program once.
-    elif(time_flag == 'W'):
-        tfs=2;tfe=2;#Warm season dataset: 1 Apr - 31 Oct ; run program once.
-    elif(time_flag == 'B'):
-        tfs=1;tfe=2 #Run program twice, once for 1 Jan - 31 Dec (tfs=1), and a second time, for 1 Apr - 31 Oct. (tfe=2)
-    else:
-        print('Incorrect time flag option, defaulting to full year')
-        tfs=1;tfe=1				
-
-    # read in wind data for coordinates
-    # S3 version returns a dict
-    # 'narr_data_dir' is a bucket name for s3 version
-    # TODO parameterize s3 vs h5 versions for comparison
-    
-
-    # defaults to S3 since HDF5 takes significant disk space and downloads
-    ## UPDATE THIS FOR FLEX file vs s3
-    grid_index = GridIndex("narr_latlon.h5", location=location, bucket=narr_bucket)    
-    wind_data = WindData(grid_index, location = location, bucket = narr_bucket)    
-    narr_timeseries = wind_data.read_narr_timeseries_json(latval, lonval, format = "FOD")
-
-   
-    
-    # this runs once for flags F and W and twice for B
-    for topt in range(tfs,tfe+1):
-        if(topt == 1):
-            # Use full dataset: 00 UCT 1 Jan to 21 UCT 31 Dec
-            ts,te=(0,2920)
-        elif(topt == 2):
-            # Restrict to 00 UTC 1 Apr (point #721, i.e., #720 in pythonese)
-            # to 21 UTC 31 Oct (point #2432, i.e., #2431 in pythonese).
-            # Recall that Xindi's data omits leap days.  So each year
-            # contains the same number of hours.
-            ts,te=(720,2432)
-        
-        narr_timeseries =  filter_narr_timeseries(narr_timeseries, ts, te)
-        
-        pc: np.ndarray = narr_timeseries['pc']
-        wind_speed: np.ndarray = narr_timeseries['ws']
-        wind_direction: np.ndarray = narr_timeseries['wd']    
-        
-        # run model        
-        D = fod_model(pc=pc, wind_speed=wind_speed, wind_direction=wind_direction, odor_index=odor_index)
-        
-        # save polar plots as png files, save file names
-        
-        footprints_plot_file_path, five_percent_plot_file_path = write_footprint_plots(D=D, E=E, topt=topt, output_offset_dir=output_offset_dir, file_prefix=file_prefix)
-
-
-        #---------Print formatted table to text file--------        
-        if(topt == 1):            
-            text_file_name:str = 'table_setbackdistance_FY.txt'            
-        elif(topt == 2):
-            text_file_name:str = 'table_setbackdistance_WS.txt' 
-        else:
-            text_file_name:str = 'table_setbackdistance.txt'
-        
-            
-        text_file_name = add_prefix_to_filename(
-            os.path.join(output_offset_dir, text_file_name), file_prefix)
-        
-        table_text = setback_text_table(D)
-        write_setback_text_table(text_file_name=text_file_name, table_text=table_text)
-        return text_file_name
-
-        
-        # make a Lat/Lon array, used by both KML and shape file writers
-        # this is not the same as 2018 version:
-        #   b/c uses geodesic fn since vincenty was deprecated
-        
-        dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.        
-        LL=np.empty((81,3,2), dtype=float, order='F')        
-        
-        for d in range(0,dbin.size):
-            for p in range(0,3):
-                LL[d,p,1]=geodesic(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).latitude
-                LL[d,p,0]=geodesic(miles=D[d,p]).destination(Point(latval, lonval), dbin[d]).longitude
-        LL[80,:,:]=LL[0,:,:]
-        
-        
-        #-----------Generate KML file with footprints drawn as polygons----------
-        if(topt == 2):
-            file_name = "kml_footprint_WS.kml" 
-        else:
-            file_name = "kml_footprint_FY.kml"
-            
-        kml_file_name = add_prefix_to_filename(os.path.join(output_offset_dir, file_name), file_prefix)
-        write_kml(LL, E, latval, lonval, kml_file_name)
-
-
-        #----------Create ESRI shapefile (only output 5% footprint)--------------
-
-        # point source
-        if(topt == 1):
-            shapefile_name_stem = SHAPE_SOURCE_FY = 'shp_source_FY' 
-        elif(topt == 2):
-            shapefile_name_stem = SHAPE_SOURCE_WS = 'shp_source_WS' 
-
-        shapefile_name_stem = add_prefix_to_filename(os.path.join(output_offset_dir, shapefile_name_stem), file_prefix)
-
-        pointsource_shape_files = write_pointsource_shapefile(shapefile_name_stem, lonval, latval)
-        
-        # polygon
-        if(topt == 1):
-            shapefile_name_stem = SHAPE_FOOTPRINT_FY = 'shp_footprint_FY' 
-        elif(topt == 2):                   
-            shapefile_name_stem = SHAPE_FOOTPRINT_WS = 'shp_footprint_WS'      
-
-        shapefile_name_stem = add_prefix_to_filename(os.path.join(output_offset_dir, shapefile_name_stem), file_prefix)
-        footprint_shape_files = write_footprint_shapefile(shape_file_name_stem=shapefile_name_stem, LL=LL)
-
-        #---- create zip of shape file ---#
-        
-        zip_files = pointsource_shape_files + footprint_shape_files
-        if(topt == 1):
-            zipfile_name = 'fy_shapefile.zip' 
-        elif(topt == 2):                   
-            zipfile_name = 'ws_shapefile.zip' 
-        
-        zipfile_path =  add_prefix_to_filename(os.path.join(output_offset_dir,  zipfile_name), file_prefix)
-    
-        zipfile_path = write_zipfile(zipfile_path, zip_files)
-        
-    # end for loop
-
-def main():
-    latval = float(sys.argv[1])
-    lonval = float(sys.argv[2])
-    odor_index = int(float(sys.argv[3]))
-    file_prefix = sys.argv[4]
-    narr_data_location:str = sys.argv[5] if len(sys.argv) > 5 else os.getenv("NARR_DATA_LOCATION", "S3")
-    
-    # raises exception if location is outside the NARR domain
-    # gather additional params from "config" python script
-    load_dotenv()
-    time_flag = os.getenv("TIME_FLAG", "F")
-    output_offset_dir=os.getenv("OUTPUT_OFFSET_DIR")
-    if not output_offset_dir:
-        raise ValueError("OUTPUT_OFFSET_DIR environment variable is not set")
-    
-
-    
-    # this reduces the number of params but re-using the "narr_data_dir" as 
-    # either the folder where the H5 files are the bucket name
-    # instead create two versions of "fod" since the env vars are very different
-    if narr_data_location=="S3":
-        narr_data_dir = os.getenv("NARR_BUCKET")
-        narr_grid_latlon = os.getenv("NARR_GRID_LATLON_S3", "")
-        from mioffset.aws import get_aws_config
-        try:
-            aws_config = get_aws_config()
-        except Exception as e:
-            raise ValueError(f"Location S3 but error occurred while initializing AWS config: {e}")  
-        
-    else:
-        narr_data_dir = os.getenv("NARR_DATA_DIR")
-        narr_grid_latlon = os.getenv("NARR_GRID_LATLON", "")
-        if not narr_grid_latlon:
-            raise ValueError("NARR_GRID_LATLON environment variable is not set")
-
-        
-    if not narr_data_dir:
-        raise ValueError("NARR_DATA_DIR or NARR_BUCKET environment variable is not set")
-        
-    fod(latval, lonval, odor_index, file_prefix, time_flag, output_offset_dir,narr_grid_latlon=narr_grid_latlon, narr_data_dir=narr_data_dir, narr_data_location=narr_data_location)
-
-if __name__ == "__main__":
-    main()
