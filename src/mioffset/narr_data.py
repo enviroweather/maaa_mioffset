@@ -682,7 +682,7 @@ def wind_data_factory(location = "S3",
 
     if location == "S3":
         valid_s3_client: S3Client = s3_client or get_s3_client()
-        if not (valid_s3_client and not check_bucket(valid_s3_client, narr_bucket)):
+        if not (valid_s3_client and check_bucket(valid_s3_client, narr_bucket)):
             raise RuntimeError(f"requested S3 access but invalid client {valid_s3_client} or bucket {narr_bucket}")
 
         grid_index = GridIndexS3(narr_grid_file= narr_grid_file, bucket=narr_bucket, s3_client= valid_s3_client)

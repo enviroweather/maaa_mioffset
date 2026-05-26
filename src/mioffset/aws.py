@@ -82,7 +82,7 @@ def check_bucket(s3_client:S3Client, bucket_name:str):
 # uses yield so need to get all data right away 
 # from the H5 file and then returning
 # so that the tmp_path can be released
-def read_hdf5_from_s3(s3_client:S3Client, bucket:str, filename:str)-> Generator[h5py.File]:
+def read_hdf5_from_s3(s3_client:S3Client, bucket:str, filename:str):
     """since hdf5 can only be read properly from disk, this enables
     reading from S3 via a temporary local file.  Uses a generator in order to 
     have the tempfile closed and deleted when reading is complete. 
