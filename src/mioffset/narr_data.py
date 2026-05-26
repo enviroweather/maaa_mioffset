@@ -595,7 +595,7 @@ class WindDataS3(WindData):
             ts_by_year = response['Body'].read()
             ts_by_year = json.loads(ts_by_year)
         except ClientError as e:
-            error_code = e.response['Error']['Code']
+            error_code = e.response['Error']['Code']   # type:ignore   
             if error_code in ('NoSuchBucket', 'InvalidBucketName'):
                 raise ValueError(
                     f"S3 bucket '{self.bucket}' not found or invalid. "
@@ -647,6 +647,7 @@ class WindDataS3(WindData):
 
 ##################################    
 
+
 def wind_data_factory(location = "S3", 
                       narr_grid_file:str ="", narr_data_dir:str="", 
                       narr_bucket:str = "", s3_client:S3Client|None = None)->WindData:
@@ -680,10 +681,11 @@ def wind_data_factory(location = "S3",
     """
 
     if location == "S3":
-        if not s3_client and not check_bucket(s3_client, narr_bucket):
-            raise RuntimeError(f"requested S3 access but invalid client {s3_client} or bucket {narr_bucket}")
+        valid_s3_client: S3Client = s3_client or get_s3_client()
+        if not (valid_s3_client and not check_bucket(valid_s3_client, narr_bucket)):
+            raise RuntimeError(f"requested S3 access but invalid client {valid_s3_client} or bucket {narr_bucket}")
 
-        grid_index = GridIndexS3(narr_grid_file= narr_grid_file, bucket=narr_bucket, s3_client= s3_client)
+        grid_index = GridIndexS3(narr_grid_file= narr_grid_file, bucket=narr_bucket, s3_client= valid_s3_client)
         wind_data = WindDataS3(grid_index, bucket = narr_bucket, narr_data_dir=narr_data_dir)
     elif location == "FILE":
         grid_index = GridIndex(narr_grid_file)
@@ -698,7 +700,7 @@ def wind_data_factory(location = "S3",
 # TEMPORARY FUNCTIONS TO CONVERT DATA
 
 
-def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_grid_latlon:str, local_filefolder:str)->dict[str, str]:
+def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_data_dir:str, local_filefolder:str)->dict[str, str]:
     """this is used primarily for saving one of these files locally for testing 
     as one-off function and not needed as part of the FOD model run
         Args:
@@ -712,12 +714,12 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
             local file paths, which are named for grid x,y, not lat/lon
     """
     
-    grid_index = GridIndex("narr_latlon.h5", location="S3", bucket=narr_bucket)
+    grid_index = GridIndexS3("narr_latlon.h5", bucket=narr_bucket)
     (grid_x, grid_y) = grid_index.latlon_to_gridyx(latval, lonval)
     
     files_written = {}   
      
-    wind_data = WindDataS3(grid_index, bucket = narr_bucket, )    
+    wind_data = WindDataS3(grid_index, bucket = narr_bucket, narr_data_dir=narr_data_dir)    
     narr_timeseries = wind_data.read_narr_timeseries_json(latval, lonval, format="not_fod")
     
     for dataset in wind_data._datasets:
