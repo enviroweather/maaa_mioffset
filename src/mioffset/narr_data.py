@@ -519,7 +519,7 @@ class WindData():
         return(narr_ts) 
 
 
-def filter_narr_timeseries(self, ts:dict[str, np.ndarray], tstart:int=0, tend:int=2920)->dict[str, np.ndarray]:
+def filter_narr_timeseries(ts:dict[str, np.ndarray], tstart:int=0, tend:int=2920)->dict[str, np.ndarray]:
     """simple method filter NARR timeseries data, limit the timeseries the same
     way for each key ()
 
