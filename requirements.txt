@@ -6,3 +6,4 @@ pyshp
 simplekml
 python-dotenv
 boto3
+types_boto3_s3
