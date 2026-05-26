@@ -40,7 +40,7 @@
 #
 ########################################################################
 
-print("MIOFFSET DEVELOPMENT VERSION - NOT FOR PRODUCTION USE")
+
 
 # #------------------------Imports-------------------------
 
@@ -71,12 +71,13 @@ import matplotlib.pyplot as plt
 from geopy.distance import geodesic
 from mioffset.narr_data import WindData, filter_narr_timeseries, wind_data_factory
 
-
-DEBUG=os.getenv('DEBUG', True)
+# set the debug flag from env 
+load_dotenv()
+DEBUG=os.getenv("DEBUG", 'False').lower() in ('true', '1', 't', True)
 
 def debug_print(x):
     if DEBUG:
-        print(x)
+        print(x, file=sys.stderr)
 
 def add_prefix_to_filename(full_path: str, prefix: str = "", prefix_sep: str = "_") -> str:
     """Return full_path with prefix applied only to the filename part."""
@@ -809,3 +810,4 @@ def fod2json(D:np.ndarray)->str:
     
     return D_json
 
+debug_print("MIOFFSET DEVELOPMENT VERSION - NOT FOR PRODUCTION USE")

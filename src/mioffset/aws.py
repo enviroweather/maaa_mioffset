@@ -72,7 +72,6 @@ def check_bucket(s3_client:S3Client, bucket_name:str):
     
     try:
         s3_client.head_bucket(Bucket=bucket_name)
-        print(f"Bucket {bucket_name} exists")
         return True
     except ClientError:
         print(f"Bucket {bucket_name} does not exist or is not accessible")
