@@ -30,7 +30,9 @@ import h5py
 import os, json
 
 from types_boto3_s3.client import S3Client
-from .aws import get_s3_client, read_hdf5_from_s3, check_bucket
+
+from mioffset.awsh5 import read_hdf5_from_s3
+from .aws import get_s3_client, check_bucket
 from botocore.exceptions import ClientError
 
 
