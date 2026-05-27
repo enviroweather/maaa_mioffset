@@ -324,6 +324,10 @@ class WindData():
             
 
     def _validate_path(self)->bool:
+        """Validate the existence of the NARR JSON directory sent during init
+        
+        Override this method for other file access sub-classes
+        """
         if not os.path.exists(self.narr_data_dir):
             raise ValueError(f"Location is FILE but {self.narr_data_dir} is not found")
         return True
@@ -588,7 +592,7 @@ class WindDataS3(WindData):
 
 
     def _validate_path(self)->bool:
-        
+        """S3 version of validation for init params"""
         if not check_bucket(self.s3_client, self.bucket):
             raise ValueError(f"Location is S3 but {self.bucket} is not found")
         
