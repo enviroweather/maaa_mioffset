@@ -32,7 +32,7 @@ import os, json
 from types_boto3_s3.client import S3Client
 
 from mioffset.awsh5 import read_hdf5_from_s3
-from mioffset.aws import get_s3_client, check_bucket
+from mioffset.aws import check_s3_client, get_s3_client, check_bucket
 from botocore.exceptions import ClientError
 
 
@@ -235,11 +235,14 @@ class GridIndexS3(GridIndex):
                 s3_client = get_s3_client()
             except Exception as e:
                 raise RuntimeError(f"S3 client initialization failed: {e}")
-            
+        
+        if not check_s3_client(s3_client):
+            raise ValueError(f"GridIndexS3 init error: Location is S3 but failed to initialize S3 client")
+        
         self.s3_client = s3_client
         
         if not check_bucket(s3_client, self.bucket):
-            raise  RuntimeError(f"S3 bucket {self.bucket} invalid or not found")
+            raise  RuntimeError(f"GridIndexS3 init error: S3 bucket {self.bucket} invalid or not found")
         
         super().__init__(narr_grid_file)
         
@@ -585,6 +588,9 @@ class WindDataS3(WindData):
                 raise ValueError(f"Location is S3 but failed to initialize S3 client: {e}")
         else:
             self.s3_client = s3_client
+        
+        if not check_s3_client(self.s3_client):
+            raise ValueError(f"Location is S3 but failed to initialize S3 client: {e}")
         
         super().__init__(grid_index, narr_data_dir)
         

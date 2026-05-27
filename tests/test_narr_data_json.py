@@ -37,7 +37,7 @@ import numpy as np
 import pytest
 from botocore.exceptions import ClientError
 
-from mioffset.narr_data import DATASETS, GridIndex, WindData, WindDataS3, wind_data_factory
+from mioffset.narr_data import DATASETS, GridIndex, GridIndexS3, WindData, WindDataS3, wind_data_factory
 from mioffset.aws import get_aws_config, get_s3_client
 
 # Import shared test utilities from conftest
@@ -139,6 +139,23 @@ class TestWindDataInit:
 
 
 # ---------------------------------------------------------------------------
+# TestGridIndexS3InitValidation — GridIndexS3 constructor client checks
+# ---------------------------------------------------------------------------
+
+class TestGridIndexS3InitValidation:
+    """GridIndexS3 init should fail fast for invalid/absent S3 clients."""
+
+    def test_bad_explicit_s3_client_raises(self):
+        with pytest.raises(ValueError, match="S3 client"):
+            GridIndexS3("some/s3/key.h5", bucket="my-bucket", s3_client=object())
+
+    def test_no_client_and_bad_env_raises(self):
+        with patch("mioffset.narr_data.get_s3_client", side_effect=Exception("bad env")):
+            with pytest.raises(RuntimeError, match="S3 client initialization failed"):
+                GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+
+
+# ---------------------------------------------------------------------------
 # TestWindDataS3Init — WindDataS3 constructor
 # ---------------------------------------------------------------------------
 
@@ -173,10 +190,19 @@ class TestWindDataS3Init:
             with pytest.raises(ValueError, match="S3 client"):
                 WindDataS3(mock_grid_index, bucket="not-a-bucket", narr_data_dir=TEST_DATA_DIR)
 
-    def test_missing_dir_raises_value_error(self, mock_grid_index):
+    def test_bad_explicit_s3_client_raises(self, mock_grid_index):
+        with pytest.raises((ValueError, NameError)):
+            WindDataS3(
+                mock_grid_index,
+                bucket="my-bucket",
+                narr_data_dir=TEST_DATA_DIR,
+                s3_client=object(),
+            )
+
+    def test_missing_dir_does_not_raise_for_s3(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client"):
-            with pytest.raises(ValueError):
-                WindDataS3(mock_grid_index, bucket=self.bucket, narr_data_dir="/nonexistent")
+            wd = WindDataS3(mock_grid_index, bucket=self.bucket, narr_data_dir="/nonexistent")
+        assert wd.narr_data_dir == "/nonexistent"
 
 
 # ---------------------------------------------------------------------------
