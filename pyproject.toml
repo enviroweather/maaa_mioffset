@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mioffset"
-version = "0.1.4"
+version = "0.1.5"
 description = "MI Odor Print — odor setback distance model for Michigan livestock facilities"
 readme = "readme.md"
 license = { text = "Copyright 2026 MSU Trustees. All rights reserved." }
