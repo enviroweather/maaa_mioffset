@@ -143,16 +143,23 @@ class TestWindDataInit:
 # ---------------------------------------------------------------------------
 
 class TestGridIndexS3InitValidation:
-    """GridIndexS3 init should fail fast for invalid/absent S3 clients."""
+    """GridIndexS3 init should fail fast when client or bucket validation fails."""
 
-    def test_bad_explicit_s3_client_raises(self):
-        with pytest.raises(ValueError, match="S3 client"):
-            GridIndexS3("some/s3/key.h5", bucket="my-bucket", s3_client=object())
+    def test_bad_s3_client_check_raises(self):
+        with patch("mioffset.narr_data.check_s3_client", side_effect=RuntimeError("bad client")):
+            with pytest.raises(ValueError, match="S3 client"):
+                GridIndexS3("some/s3/key.h5", bucket="my-bucket", s3_client=MagicMock())
 
     def test_no_client_and_bad_env_raises(self):
         with patch("mioffset.narr_data.get_s3_client", side_effect=Exception("bad env")):
             with pytest.raises(RuntimeError, match="S3 client initialization failed"):
                 GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+
+    def test_bad_bucket_check_raises(self):
+        with patch("mioffset.narr_data.check_s3_client", return_value=True):
+            with patch("mioffset.narr_data.check_bucket", side_effect=RuntimeError("bad bucket")):
+                with pytest.raises(RuntimeError, match="bucket"):
+                    GridIndexS3("some/s3/key.h5", bucket="my-bucket", s3_client=MagicMock())
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +167,7 @@ class TestGridIndexS3InitValidation:
 # ---------------------------------------------------------------------------
 
 class TestWindDataS3Init:
-    """WindDataS3 constructor stores attributes and handles failures gracefully."""
+    """WindDataS3 constructor stores attributes and raises during init for bad S3 setup."""
 
     bucket:str = os.getenv('NARR_BUCKET', "my-bucket")
     
@@ -185,19 +192,30 @@ class TestWindDataS3Init:
             WindDataS3(mock_grid_index, bucket=self.bucket, narr_data_dir=TEST_DATA_DIR)
         mock_get.assert_called_once()
 
-    def test_failed_s3_client_raises_value_error(self, mock_grid_index):
+    def test_failed_env_s3_client_raises_runtime_error(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client", side_effect=Exception("no creds")):
-            with pytest.raises(ValueError, match="S3 client"):
+            with pytest.raises(RuntimeError, match="S3 client"):
                 WindDataS3(mock_grid_index, bucket="not-a-bucket", narr_data_dir=TEST_DATA_DIR)
 
-    def test_bad_explicit_s3_client_raises(self, mock_grid_index):
-        with pytest.raises((ValueError, NameError)):
-            WindDataS3(
-                mock_grid_index,
-                bucket="my-bucket",
-                narr_data_dir=TEST_DATA_DIR,
-                s3_client=object(),
-            )
+    def test_bad_s3_client_check_raises_runtime_error(self, mock_grid_index):
+        with patch("mioffset.narr_data.check_s3_client", side_effect=RuntimeError("bad client")):
+            with pytest.raises(RuntimeError, match="S3 client"):
+                WindDataS3(
+                    mock_grid_index,
+                    bucket="my-bucket",
+                    narr_data_dir=TEST_DATA_DIR,
+                    s3_client=MagicMock(),
+                )
+
+    def test_bad_bucket_check_raises_runtime_error(self, mock_grid_index):
+        with patch("mioffset.narr_data.check_bucket", side_effect=RuntimeError("bad bucket")):
+            with pytest.raises(RuntimeError, match="bucket"):
+                WindDataS3(
+                    mock_grid_index,
+                    bucket="my-bucket",
+                    narr_data_dir=TEST_DATA_DIR,
+                    s3_client=MagicMock(),
+                )
 
     def test_missing_dir_does_not_raise_for_s3(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client"):

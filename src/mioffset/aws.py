@@ -81,7 +81,7 @@ def check_s3_client(s3_client:S3Client):
         return True
     except ClientError:
         logging.error("Failed to validate S3 client")
-        return False
+        raise
 
 
 def check_bucket(s3_client:S3Client, bucket_name:str):
@@ -100,5 +100,5 @@ def check_bucket(s3_client:S3Client, bucket_name:str):
         return True
     except ClientError:
         logging.error(f"Bucket {bucket_name} does not exist or is not accessible")
-        return False
+        raise
     

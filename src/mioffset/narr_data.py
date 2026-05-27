@@ -236,13 +236,17 @@ class GridIndexS3(GridIndex):
             except Exception as e:
                 raise RuntimeError(f"S3 client initialization failed: {e}")
         
-        if not check_s3_client(s3_client):
-            raise ValueError(f"GridIndexS3 init error: Location is S3 but failed to initialize S3 client")
+        try:
+            check_s3_client(s3_client)
+        except Exception as e:
+            raise ValueError(f"GridIndexS3 init error: Location is S3 but failed to initialize S3 client: {e}")
         
         self.s3_client = s3_client
         
-        if not check_bucket(s3_client, self.bucket):
-            raise  RuntimeError(f"GridIndexS3 init error: S3 bucket {self.bucket} invalid or not found")
+        try:
+            check_bucket(s3_client, self.bucket)
+        except Exception as e:
+            raise RuntimeError(f"GridIndexS3 init error: S3 bucket {self.bucket} invalid or not found: {e}")
         
         super().__init__(narr_grid_file)
         
@@ -585,12 +589,14 @@ class WindDataS3(WindData):
             try:
                 self.s3_client = get_s3_client()
             except Exception as e:
-                raise ValueError(f"Location is S3 but failed to initialize S3 client: {e}")
+                raise RuntimeError(f"Location is S3 but failed to initialize S3 client: {e}")
         else:
             self.s3_client = s3_client
         
-        if not check_s3_client(self.s3_client):
-            raise ValueError(f"Location is S3 but failed to initialize S3 client: {e}")
+        try:
+            check_s3_client(self.s3_client)
+        except Exception as e:
+            raise RuntimeError(f"Location is S3 but failed to initialize S3 client")
         
         super().__init__(grid_index, narr_data_dir)
         
@@ -599,10 +605,10 @@ class WindDataS3(WindData):
 
     def _validate_path(self)->bool:
         """S3 version of validation for init params"""
-        if not check_bucket(self.s3_client, self.bucket):
-            raise ValueError(f"Location is S3 but {self.bucket} is not found")
-        
-        return True
+        try:
+            check_bucket(self.s3_client, self.bucket)
+        except Exception as e:
+            raise RuntimeError(f"Location is S3 but failed to validate bucket: {e}")
 
     def read_dataset_json(self, grid_x:int, grid_y:int, dataset:str)->dict[int, np.ndarray]:
         """read a dataset for all years, S3 edition
