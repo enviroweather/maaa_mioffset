@@ -6,8 +6,6 @@ from os import getenv
 import sys
 # aws 
 import boto3
-import botocore
-import h5py
 from types_boto3_s3.client import S3Client
 from botocore.exceptions import ClientError
 
@@ -41,6 +39,8 @@ def get_aws_config(dotenv_file:str|None = None)->dict[str, str]:
         raise ValueError("AWS_ACCESS_KEY_ID is not set in environment or .env file")
     if aws_config["aws_secret_access_key"] is None:
         raise ValueError("AWS_SECRET_ACCESS_KEY is not set in environment or .env file")
+    if aws_config["region_name"] is None:
+        raise ValueError("REGION_NAME is not set in environment or .env file")
 
     return aws_config
 
