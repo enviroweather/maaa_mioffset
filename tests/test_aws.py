@@ -10,6 +10,8 @@ All tests assume valid AWS credentials and NARR_BUCKET are present in the
 import os
 import pytest
 import boto3
+from unittest.mock import MagicMock
+from botocore.exceptions import ClientError
 
 from mioffset.aws import *
 
@@ -77,3 +79,26 @@ class TestCheckBucket:
 
     def test_returns_false_for_nonexistent_bucket(self, s3_client):
         assert check_bucket(s3_client, "this-bucket-should-not-exist-mioffset-xyz-999") is False
+
+
+class TestCheckS3Client:
+    @pytest.fixture
+    def aws_config_available(self):
+        """Skip real-AWS validation tests when required env vars are missing."""
+        if not os.getenv("AWS_ACCESS_KEY_ID") or not os.getenv("AWS_SECRET_ACCESS_KEY"):
+            pytest.skip("AWS credentials not set in .env")
+
+    def test_returns_false_for_non_client_object(self):
+        assert check_s3_client(object()) is False
+
+    def test_returns_false_when_client_call_raises_client_error(self):
+        mock_s3 = MagicMock()
+        mock_s3.list_buckets.side_effect = ClientError(
+            {"Error": {"Code": "InvalidClientTokenId", "Message": "Invalid token"}},
+            "ListBuckets",
+        )
+        assert check_s3_client(mock_s3) is False
+
+    def test_returns_true_for_valid_real_client(self, aws_config_available):
+        client = get_s3_client()
+        assert check_s3_client(client) is True

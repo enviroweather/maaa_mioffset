@@ -1,4 +1,5 @@
 # reload .env file to accommodate changes during development
+import logging
 from typing import Generator
 
 from dotenv import load_dotenv
@@ -60,6 +61,29 @@ def get_s3_client(aws_config:dict|None = None, dotenv_file:str|None = None)->S3C
     s3_client = session.client('s3')
     return(s3_client)
 
+
+def check_s3_client(s3_client:S3Client):
+    """validate the S3 client
+
+    Args:
+        s3_client (S3Client): valid boto 3 S3 client.
+
+    Returns:
+        bool: True if client is valid, False otherwise
+    """
+    
+    if not hasattr(s3_client, "list_buckets"):
+        logging.error("Invalid S3 client (missing list_buckets method)")
+        return False
+    
+    try:
+        s3_client.list_buckets()
+        return True
+    except ClientError:
+        logging.error("Failed to validate S3 client")
+        return False
+
+
 def check_bucket(s3_client:S3Client, bucket_name:str):
     """is the bucket a thing?
 
@@ -75,6 +99,6 @@ def check_bucket(s3_client:S3Client, bucket_name:str):
         s3_client.head_bucket(Bucket=bucket_name)
         return True
     except ClientError:
-        print(f"Bucket {bucket_name} does not exist or is not accessible", file=sys.stderr)
+        logging.error(f"Bucket {bucket_name} does not exist or is not accessible")
         return False
     
