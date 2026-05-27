@@ -115,8 +115,8 @@ def footprint_plots(D: np.ndarray, E: float, topt: int):
     #   1.  First image: all three footprints (1.5%,3%,5%)
     
     ax = plt.subplot(111, projection='polar')
-    ax.set_theta_zero_location('N')
-    ax.set_theta_direction(-1)
+    ax.set_theta_zero_location('N')    #type:ignore # this works, but raise typing error
+    ax.set_theta_direction(-1)         #type:ignore # this works, but raise typing error
     theta=np.radians(dbin)
     ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
     ax.plot(theta, D[:,0],'r-',theta, D[:,1],'b-',theta, D[:,2],'g-',lw=2.5)
@@ -212,10 +212,15 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
     plt.close()
     
     
+    #TODO this code should be moved to footprint_plots, and if necessary could we add a parameter to footprint plots
+    # this seems to add a new subplot to the original 
+    # that accommodates this (since it is nearly the same code)
+    dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.
+
     # ---------  2.   Second image: 5% footprint only.
     ax = plt.subplot(111, projection='polar')
-    ax.set_theta_zero_location('N')
-    ax.set_theta_direction(-1)
+    ax.set_theta_zero_location('N')              # type:ignore  # these methods do work
+    ax.set_theta_direction(-1)                   # type:ignore  # these methods do work
     theta=np.radians(dbin)
     ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
     ax.plot(theta, D[:,0],'r-',lw=2.5)
@@ -239,8 +244,8 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
         ax.set_yticks(np.linspace(0,yl,num=6))
         ax.set_yticklabels(np.round(np.linspace(0,yl,num=6),1))
     position=335
-    ax._r_label_position._t = (position, 0)
-    ax._r_label_position.invalidate()
+    ax._r_label_position._t = (position, 0)   # type:ignore  # these methods do work
+    ax._r_label_position.invalidate()         # type:ignore  # these methods do work
     ax.xaxis.set_tick_params(labelsize=14)
     ax.yaxis.set_tick_params(labelsize=14,labelcolor='black')
     if(topt == 1):
@@ -251,7 +256,7 @@ def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir:
         + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
     # Shrink current axis by 20%
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8])
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8]) # type:ignore  # these methods do work
 
     # Put a legend to the right of the current axis
     lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
@@ -445,7 +450,7 @@ def kml_encode_base64(kml:str|simplekml.Kml, kml_file_name="kml"):
             If `kml` is neither a `simplekml.Kml`-like object (with `.kml()`) nor a string.
     """
     if hasattr(kml, 'kml'):
-        kml_xml:str = kml.kml()
+        kml_xml:str = kml.kml()   # type:ignore  # these methods do work
     elif isinstance(kml, str):
         kml_xml:str = kml        
     else:
