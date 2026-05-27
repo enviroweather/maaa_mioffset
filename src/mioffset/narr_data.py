@@ -32,7 +32,7 @@ import os, json
 from types_boto3_s3.client import S3Client
 
 from mioffset.awsh5 import read_hdf5_from_s3
-from .aws import get_s3_client, check_bucket
+from mioffset.aws import get_s3_client, check_bucket
 from botocore.exceptions import ClientError
 
 
@@ -88,16 +88,18 @@ class GridIndex():
         self.narr_grid_file = narr_grid_file  # this is a key for s3
         self._LAT: np.ndarray | None = None
         self._LON: np.ndarray | None = None
-        self._load_error: str | None = None
-        # Only set the default reader if a subclass hasn't already chosen one.
-        # GridIndexS3.__init__ sets _grid_reader before calling super().__init__,
-        # so we must not override it here.
-        if not hasattr(self, '_grid_reader'):
-            self._grid_reader = self._read_narr_grid_file_hdf5
+        self._load_error: str = "Error occurred while loading grid file using location {self.location} and narr_grid_file {self.narr_grid_file}: {e}"
+          
         # try to load the lat/lon data structures for conversion
         self._load_grid_file()
 
 
+    # this doesn't smell right 
+    def assign_grid_reader(self):
+        """assign the appropriate grid reader method based on the location for this class/subclass"""
+        self._grid_reader = self._read_narr_grid_file_hdf5
+
+        
     @property
     def LAT(self) -> np.ndarray | None:
         """Latitude grid array, or None if not yet loaded."""
@@ -125,10 +127,9 @@ class GridIndex():
 
     def _load_grid_file(self):
         try:
-            return self._grid_reader()
-        except Exception as e:
-            self._load_error = str(e)
-            warning(f"Error occurred while loading grid file using location {self.location} and narr_grid_file {self.narr_grid_file}: {e}")
+            return self._read_narr_grid_file_hdf5() # self._grid_reader()
+        except Exception as e:            
+            raise RuntimeError(self._load_error.format(e=e))
                 
     def _read_narr_grid_file_hdf5(self):
         """
@@ -240,12 +241,15 @@ class GridIndexS3(GridIndex):
         if not check_bucket(s3_client, self.bucket):
             raise  RuntimeError(f"S3 bucket {self.bucket} invalid or not found")
         
-        # class customization: set the method that actually reads the file
-        self._grid_reader = self._read_narr_grid_file_s3
-
         super().__init__(narr_grid_file)
         
-    def _read_narr_grid_file_s3(self):
+        # class customization: set the method that actually reads the file
+        self._grid_reader = self._read_narr_grid_file_s3
+        
+        # override location
+        self.location = "S3"
+        
+    def _read_narr_grid_file_s3(self)->tuple[np.ndarray, np.ndarray]:
         """
         read in lat,lon for converting lat lon to climatology grid indices
         
@@ -263,12 +267,18 @@ class GridIndexS3(GridIndex):
             for hf5 in read_hdf5_from_s3(self.s3_client, bucket=self.bucket, filename=self.narr_grid_file):
                 self._LAT = np.array(hf5.get('LAT'))  # type: ignore
                 self._LON = np.array(hf5.get('LON'))  # type: ignore
+            
         except Exception as e:
             raise RuntimeError(f"could not get H5 file from S3 {self.narr_grid_file}: {e}")
-
-        return (self._LAT, self._LON)
         
-
+        return(self.LAT, self.LON) # type: ignore
+    
+        
+    def _load_grid_file(self):
+        try:
+            return self._read_narr_grid_file_s3() # self._grid_reader()
+        except Exception as e:            
+            raise RuntimeError(self._load_error.format(e=e))
 
 ##################################
 
@@ -310,9 +320,13 @@ class WindData():
 
         self.grid_index = grid_index
         self.narr_data_dir = narr_data_dir
+        self._validate_path()
             
+
+    def _validate_path(self)->bool:
         if not os.path.exists(self.narr_data_dir):
             raise ValueError(f"Location is FILE but {self.narr_data_dir} is not found")
+        return True
 
     ############### JSON METHODS ##################
     def narr_data_json_filename(self, dataset:str, x:int,y:int )->str:
@@ -569,7 +583,16 @@ class WindDataS3(WindData):
             self.s3_client = s3_client
         
         super().__init__(grid_index, narr_data_dir)
+        
+        self.location:str = "S3"
 
+
+    def _validate_path(self)->bool:
+        
+        if not check_bucket(self.s3_client, self.bucket):
+            raise ValueError(f"Location is S3 but {self.bucket} is not found")
+        
+        return True
 
     def read_dataset_json(self, grid_x:int, grid_y:int, dataset:str)->dict[int, np.ndarray]:
         """read a dataset for all years, S3 edition
@@ -651,8 +674,10 @@ class WindDataS3(WindData):
 
 
 def wind_data_factory(location = "S3", 
-                      narr_grid_file:str ="", narr_data_dir:str="", 
-                      narr_bucket:str = "", s3_client:S3Client|None = None)->WindData:
+                      narr_grid_file:str ="", 
+                      narr_data_dir:str="", 
+                      narr_bucket:str = "", 
+                      s3_client:S3Client|None = None)->WindData:
 
     """Factory function to create the appropriate WindData instance based on location.
 
@@ -682,7 +707,7 @@ def wind_data_factory(location = "S3",
         RuntimeError: If ``location`` is not ``"FILE"`` or ``"S3"``.
     """
 
-    if location == "S3":
+    if location.upper() == "S3":
         valid_s3_client: S3Client = s3_client or get_s3_client()
         if not (valid_s3_client and check_bucket(valid_s3_client, narr_bucket)):
             raise RuntimeError(f"requested S3 access but invalid client {valid_s3_client} or bucket {narr_bucket}")

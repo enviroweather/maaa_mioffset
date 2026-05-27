@@ -145,9 +145,11 @@ class TestWindDataInit:
 class TestWindDataS3Init:
     """WindDataS3 constructor stores attributes and handles failures gracefully."""
 
+    bucket:str = os.getenv('NARR_BUCKET', "my-bucket")
+    
     def test_location_is_s3(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client"):
-            wd = WindDataS3(mock_grid_index, bucket="my-bucket", narr_data_dir=TEST_DATA_DIR)
+            wd = WindDataS3(mock_grid_index, bucket=self.bucket, narr_data_dir=TEST_DATA_DIR)
         assert wd.location == "S3"
 
     def test_bucket_stored(self, mock_grid_index):
@@ -157,24 +159,24 @@ class TestWindDataS3Init:
 
     def test_grid_index_stored(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client"):
-            wd = WindDataS3(mock_grid_index, bucket="my-bucket", narr_data_dir=TEST_DATA_DIR)
+            wd = WindDataS3(mock_grid_index, bucket=self.bucket, narr_data_dir=TEST_DATA_DIR)
         assert wd.grid_index is mock_grid_index
 
     def test_s3_client_created(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client") as mock_get:
             mock_get.return_value = MagicMock()
-            WindDataS3(mock_grid_index, bucket="my-bucket", narr_data_dir=TEST_DATA_DIR)
+            WindDataS3(mock_grid_index, bucket=self.bucket, narr_data_dir=TEST_DATA_DIR)
         mock_get.assert_called_once()
 
     def test_failed_s3_client_raises_value_error(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client", side_effect=Exception("no creds")):
             with pytest.raises(ValueError, match="S3 client"):
-                WindDataS3(mock_grid_index, bucket="my-bucket", narr_data_dir=TEST_DATA_DIR)
+                WindDataS3(mock_grid_index, bucket="not-a-bucket", narr_data_dir=TEST_DATA_DIR)
 
     def test_missing_dir_raises_value_error(self, mock_grid_index):
         with patch("mioffset.narr_data.get_s3_client"):
             with pytest.raises(ValueError):
-                WindDataS3(mock_grid_index, bucket="my-bucket", narr_data_dir="/nonexistent")
+                WindDataS3(mock_grid_index, bucket=self.bucket, narr_data_dir="/nonexistent")
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ from typing import Generator
 
 from dotenv import load_dotenv
 from os import getenv
+import sys
 # aws 
 import boto3
 import botocore
@@ -74,6 +75,6 @@ def check_bucket(s3_client:S3Client, bucket_name:str):
         s3_client.head_bucket(Bucket=bucket_name)
         return True
     except ClientError:
-        print(f"Bucket {bucket_name} does not exist or is not accessible")
+        print(f"Bucket {bucket_name} does not exist or is not accessible", file=sys.stderr)
         return False
     

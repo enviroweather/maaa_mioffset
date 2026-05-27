@@ -60,3 +60,9 @@ pythonpath = ["src"]
 markers = [
     "integration: marks tests that require external resources (NARR files or AWS/S3)",
 ]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+    "pytest>=9.0.3",
+]
