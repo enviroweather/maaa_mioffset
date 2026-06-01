@@ -2,3 +2,4 @@
 pytest
 ipykernel
 ipython
+types_boto3_s3

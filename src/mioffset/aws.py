@@ -5,8 +5,12 @@ from dotenv import load_dotenv
 from os import getenv
 # aws 
 import boto3
-from types_boto3_s3.client import S3Client
 from botocore.exceptions import ClientError
+
+import typing as t
+if t.TYPE_CHECKING:
+    from types_boto3_s3.client import S3Client
+
 
 def get_aws_config(dotenv_file:str|None = None)->dict[str, str]:
     """Read AWS-related environment values after loading dotenv.

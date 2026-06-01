@@ -29,7 +29,9 @@ import numpy as np
 import h5py
 import os, json
 
-from types_boto3_s3.client import S3Client
+import typing as t
+if t.TYPE_CHECKING:
+    from types_boto3_s3.client import S3Client
 
 from mioffset.awsh5 import read_hdf5_from_s3
 from mioffset.aws import check_s3_client, get_s3_client, check_bucket
