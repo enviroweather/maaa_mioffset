@@ -38,10 +38,10 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-xdist",
-    "types-boto3[S3]",
 ]
 aws = [
     "boto3",
+    "types-boto3[S3]",
 ]
 report = [
     "matplotlib",

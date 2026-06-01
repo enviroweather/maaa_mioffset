@@ -29,8 +29,13 @@ import numpy as np
 import h5py
 import os, json
 
-import typing as t
-if t.TYPE_CHECKING:
+# TODO FIGURE OUT HOW TO GET TESTS TO PASS DURING TESTING AND TYPING ONLY
+
+from types_boto3_s3.client import S3Client
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    # when doing it this way the pytest tests fail
     from types_boto3_s3.client import S3Client
 
 from mioffset.awsh5 import read_hdf5_from_s3

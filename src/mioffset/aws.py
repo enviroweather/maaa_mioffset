@@ -8,7 +8,12 @@ import boto3
 from botocore.exceptions import ClientError
 
 import typing as t
-if t.TYPE_CHECKING:
+
+# TODO figure out how to get this only for testing
+from types_boto3_s3.client import S3Client
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
     from types_boto3_s3.client import S3Client
 
 
