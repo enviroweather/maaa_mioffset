@@ -95,11 +95,5 @@ class TestFodModel():
         odor_index = 0
         D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
         assert D is not None
-        
-    def test_fod_model_json(self, ts):
-        odor_index = 10
-        D = fod_model(pc=ts['pc'], wind_speed=ts['ws'], wind_direction=ts['wd'], odor_index=odor_index)
-        json_data = fod2json(D)
-        assert json_data is not None
-        assert type(json_data) == str
+    
 

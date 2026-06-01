@@ -3,41 +3,36 @@ tests/test_mioffset.py
 
 Tests for functions in mioffset/mioffset.py.
 
-Goal: verify that build_fod_response() returns a dict that can be
-serialized to JSON, suitable for use as an API response.
+This file is intentionally limited to the web-facing response helpers and the
+S3-backed wind-data path used by mioffset.py.
 
 Test structure
 --------------
 Pure unit tests (always run, no external resources needed):
-  - TestConfigFromEnv     — config_from_env() reads env vars correctly
-  - TestBuildFodResponse  — build_fod_response() returns JSON-serializable dict
-                            NOTE: two bugs currently prevent these from passing:
-                              1. `topt` is referenced but never defined in
-                                 build_fod_response() → NameError
-                              2. plot SVG is encoded to bytes before being placed
-                                 in the response dict → not JSON-serializable
-                            Fix those bugs and the tests will pass.
+    - TestConfigFromEnv     — config_from_env() reads env vars correctly
+    - TestBuildFodResponse  — build_fod_response() returns JSON-serializable dict
 
 Integration tests (@pytest.mark.integration):
-  Skipped automatically when AWS credentials or NARR_BUCKET are absent.
-  - TestFodRunS3   — fod_run_s3() with real S3 data
-  - TestApiHandler — api_handler() end-to-end
+    Skipped automatically when AWS credentials or NARR_BUCKET are absent.
+    - TestFodRunS3   — fod_run_s3() with real S3 data
+    - TestApiHandler — api_handler() end-to-end
 
 Run only fast tests:
-    pytest -m "not integration"
+        pytest -m "not integration"
 
 Run all tests (including live S3):
-    pytest
+        pytest
 """
 
 import json
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 
 from conftest import aws_fully_configured
+import mioffset.mioffset as mioffset_module
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -67,12 +62,9 @@ def mocked_fod3():
         "3percent": [0.4] * 80,
         "1.5percent": [0.3] * 80,
     }
-    with patch("mioffset.mioffset.fod2dict", return_value=fake_fod_dict), \
-         patch("mioffset.mioffset.setback_text_table", return_value="table text"), \
-         patch("mioffset.mioffset.footprint_plots", return_value=MagicMock()), \
-         patch("mioffset.mioffset.matplotlib_to_svg", return_value="<svg></svg>"), \
-         patch("mioffset.mioffset.fod_plot_to_ll", return_value=np.zeros((81, 3, 2))), \
-         patch("mioffset.mioffset.fod_geojson", return_value=fake_geojson):
+    with patch.object(mioffset_module, "fod2dict", return_value=fake_fod_dict), \
+         patch.object(mioffset_module, "fod_plot_to_ll", return_value=np.zeros((81, 3, 2))), \
+         patch.object(mioffset_module, "fod_geojson", return_value=fake_geojson):
         yield
 
 
@@ -87,23 +79,20 @@ class TestConfigFromEnv:
         monkeypatch.setenv("NARR_BUCKET", "test-bucket")
         monkeypatch.setenv("NARR_DATA_DIR", "test-dir")
         monkeypatch.setenv("NARR_GRID_LATLON_S3", "test-grid.h5")
-        from mioffset.mioffset import config_from_env
-        assert isinstance(config_from_env(), dict)
+        assert isinstance(mioffset_module.config_from_env(), dict)
 
     def test_has_required_keys(self, monkeypatch):
         monkeypatch.setenv("NARR_BUCKET", "b")
         monkeypatch.setenv("NARR_DATA_DIR", "d")
         monkeypatch.setenv("NARR_GRID_LATLON_S3", "g")
-        from mioffset.mioffset import config_from_env
-        result = config_from_env()
+        result = mioffset_module.config_from_env()
         assert {"narr_bucket", "narr_data_dir", "narr_grid_file"} <= result.keys()
 
     def test_reads_values_from_env(self, monkeypatch):
         monkeypatch.setenv("NARR_BUCKET", "my-bucket")
         monkeypatch.setenv("NARR_DATA_DIR", "my-dir")
         monkeypatch.setenv("NARR_GRID_LATLON_S3", "my-grid.h5")
-        from mioffset.mioffset import config_from_env
-        result = config_from_env()
+        result = mioffset_module.config_from_env()
         assert result["narr_bucket"] == "my-bucket"
         assert result["narr_data_dir"] == "my-dir"
         assert result["narr_grid_file"] == "my-grid.h5"
@@ -111,15 +100,13 @@ class TestConfigFromEnv:
     def test_missing_bucket_returns_empty_string(self, monkeypatch):
         # patch load_dotenv to prevent the .env file from repopulating the var
         monkeypatch.delenv("NARR_BUCKET", raising=False)
-        with patch("mioffset.mioffset.load_dotenv"):
-            from mioffset.mioffset import config_from_env
-            assert config_from_env()["narr_bucket"] == ""
+        with patch.object(mioffset_module, "load_dotenv"):
+            assert mioffset_module.config_from_env()["narr_bucket"] == ""
 
     def test_missing_data_dir_returns_empty_string(self, monkeypatch):
         monkeypatch.delenv("NARR_DATA_DIR", raising=False)
-        with patch("mioffset.mioffset.load_dotenv"):
-            from mioffset.mioffset import config_from_env
-            assert config_from_env()["narr_data_dir"] == ""
+        with patch.object(mioffset_module, "load_dotenv"):
+            assert mioffset_module.config_from_env()["narr_data_dir"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -130,61 +117,50 @@ class TestBuildFodResponse:
     """build_fod_response() should return a JSON-serializable dict."""
 
     def test_returns_dict(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         assert isinstance(result, dict)
 
     def test_has_meta_key(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         assert "meta" in result
 
     def test_has_inputs_key(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         assert "inputs" in result
 
     def test_has_outputs_key(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         assert "outputs" in result
 
     def test_inputs_lat_lon_oef(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         assert result["inputs"]["lat"] == TEST_LAT
         assert result["inputs"]["lon"] == TEST_LON
         assert result["inputs"]["oef"] == TEST_ODOR_INDEX
 
     def test_meta_version(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX, version="2.0")
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX, version="2.0")
         assert result["meta"]["version"] == "2.0"
 
     def test_meta_has_timestamp(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         assert "timestamp" in result["meta"]
 
-    def test_outputs_has_raw_table_map_plot(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+    def test_outputs_has_raw_and_map(self, mocked_fod3):
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         outputs = result["outputs"]
         assert "raw" in outputs
-        assert "table" in outputs
         assert "map" in outputs
-        assert "plot" in outputs
+        assert set(outputs.keys()) == {"raw", "map"}
 
     def test_response_is_json_serializable(self, mocked_fod3):
         """The complete response dict must round-trip through json.dumps/loads."""
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         json_str = json.dumps(result)
         assert isinstance(json_str, str)
 
     def test_json_roundtrip_preserves_inputs(self, mocked_fod3):
-        from mioffset.mioffset import build_fod_response
-        result = build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
+        result = mioffset_module.build_fod_response(FAKE_D, TEST_LAT, TEST_LON, TEST_ODOR_INDEX)
         recovered = json.loads(json.dumps(result))
         assert recovered["inputs"]["lat"] == TEST_LAT
         assert recovered["inputs"]["lon"] == TEST_LON

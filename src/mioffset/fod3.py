@@ -17,6 +17,7 @@
 #     + use new wind data factory method for flex file location (s3 vs file)
 #     + functions to save KML and SVG for api use, and convert to Base64 for JSON compatibility
 #     - move main 'runners' into mioffset.py - this is no longer an executable script
+#     - move Matplotlib plotting functions into setback_plots.py to keep this file lean
 #   April 2026 refactoring 
 #     + refactored into distinct functions for optimization and testing 
 #     + functions are split into modules (narr_data.py, etc)
@@ -45,235 +46,37 @@
 # #------------------------Imports-------------------------
 
 # from python stdlib
-import json
-
-import math
-import sys, os
-import io
-import zipfile
-
-
-# old mapping files
-from geopy import Point
-# vincenty method is deprecated, use geodesic method instead
-import simplekml
-import shapefile
+from os import path, getenv    
+import logging
 
 # environment
 from dotenv import load_dotenv
-
-# response prep
-import base64
+load_dotenv()
 
 # for model
+from math import pow
 import numpy as np
-import matplotlib.pyplot as plt
 from geopy.distance import geodesic
-from mioffset.narr_data import WindData, filter_narr_timeseries, wind_data_factory
 
-# set the debug flag from env 
-load_dotenv()
-DEBUG=os.getenv("DEBUG", 'False').lower() in ('true', '1', 't', True)
+# for mapping
+from geopy import Point
 
-def debug_print(x):
-    if DEBUG:
-        print(x, file=sys.stderr)
-
-def add_prefix_to_filename(full_path: str, prefix: str = "", prefix_sep: str = "_") -> str:
-    """Return full_path with prefix applied only to the filename part."""
-    
-    if prefix[-1] != prefix_sep:
-        prefix += prefix_sep 
-
-    dir_name, file_name = os.path.split(full_path)
-    prefixed_name = prefix + file_name
-    if dir_name:
-        return os.path.join(dir_name, prefixed_name)
-    return prefixed_name
-
-
-# note that these don't appear to be used in this 
-# but are perhaps used in the FE to calculate odor_index
-#--------------------------Variable definitions--------------------------
+#----------------Variable definitions/Glossary-------------------------
 # wc: Frequency of each wind-stability class (float)
 # f:  Wind-stability class that occurs closest to but not 
 #     greater than 5%, 3%, and 1.5% of the time (integer)
 # D:  Setback distance, computed as a function of wind 
 #     stability class using OFFSET look-up tables (float)
 # E:  Total Odor Emission Factor (float)
-
-# glossary
 # FY: full year
-# wind_speed: W? season
-#------------------------------------------------------------------------
+# ws: wind_speed: W? season
+# wd: wind_direction
+# 
+#----------------------------------------------------------------------
 
+### indication that this is not for final use
+logging.log(logging.INFO, "MIOFFSET DEVELOPMENT VERSION - NOT FOR PRODUCTION USE")
 
-
-####### VISUALIZATIONS ##########
-def footprint_plots(D: np.ndarray, E: float, topt: int):
-    dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.
-    #   1.  First image: all three footprints (1.5%,3%,5%)
-    
-    ax = plt.subplot(111, projection='polar')
-    ax.set_theta_zero_location('N')    #type:ignore # this works, but raise typing error
-    ax.set_theta_direction(-1)         #type:ignore # this works, but raise typing error
-    theta=np.radians(dbin)
-    ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
-    ax.plot(theta, D[:,0],'r-',theta, D[:,1],'b-',theta, D[:,2],'g-',lw=2.5)
-    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,0],D[0,0]],'r',lw=2.5,label='5%')
-    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,1],D[0,1]],'b',lw=2.5,label='3%')
-    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,2],D[0,2]],'g',lw=2.5,label='1.5%')
-    ax.set_xticks(np.arange(0,2*math.pi,2*math.pi/80))
-    ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
-    '','','','','ENE','','','','','E','','','','','ESE',
-    '','','','','SE','','','','','SSE','','','','','S',
-    '','','','','SSW','','','','','SW','','','','','wind_speedW',
-    '','','','','W','','','','','WNW','','','','','NW',
-    '','','','','NNW','','','',''])
-
-    if(1.1*np.max(D[:,2]) >= 0.5):
-        yl=np.ceil(1.1*np.max(D[:,2]))
-        ax.set_ylim(0,yl)
-        ax.set_yticks(np.linspace(0,yl,num=11))
-        ax.set_yticklabels(np.round(np.linspace(0,yl,num=11),1))
-    else:
-        yl=0.5 # Small setback distance
-        ax.set_ylim(0,yl)
-        ax.set_yticks(np.linspace(0,yl,num=6))
-        ax.set_yticklabels(np.round(np.linspace(0,yl,num=6),1))
-    position=335
-    ax._r_label_position._t = (position, 0)
-    ax._r_label_position.invalidate()
-    ax.xaxis.set_tick_params(labelsize=14)
-    ax.yaxis.set_tick_params(labelsize=14,labelcolor='black')
-    if(topt == 1):
-        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-    elif(topt == 2):
-        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-    # Shrink current axis by 20%
-    
-    box = ax.get_position()
-    ax.set_position((box.x0, box.y0, box.width * 0.8, box.height * 0.8))
-
-    # Put a legend to the right of the current axis
-    lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
-    lg.draw_frame(False)
-    return(plt)
-
-
-def matplotlib_to_svg(plt)->str:
-    """get an SVG string from a matplotlib plot. This has probably been 
-    written 1,000s of times in code bases
-    
-    Args:
-        plt: Matplotli
-        
-    Returns:
-        str: SVG code for the plot
-    
-    """
-    
-    plot_image = io.StringIO()
-    
-    plt.savefig(plot_image, format='svg')
-    plot_image.seek(0)  # rewind the data
-    plot_svg = plot_image.getvalue() # svg string
-
-    return(plot_svg)
-
-       
-
-def write_footprint_plots(D: np.ndarray, E: float, topt: int, output_offset_dir: str, file_prefix: str=""):
-    """create wind plots from model and save as PNGs
-
-    Args:
-        D (np.ndarray): Setback distance, computed as a function of wind stability class using OFFSET look-up tables (float)
-        E (float): Total Odor Emission Factor (float)
-        topt (int): time option
-        output_offset_dir (str): folder to save these in
-        file_prefix (str): optional prefix to add to file names to make them unique
-    """
-    #------Plot footprint on polar axes with standard white background-------
-
-    plt = footprint_plots(D, E, topt)
-    ## the only difference for "topt" is the filename here, move this to a parameter?
-    if(topt == 1):
-        plot_file_name = "image_footprint_3inone_FY.png"         
-    elif(topt == 2):
-        plot_file_name=  "image_footprint_3inone_Warm_Season.png" 
-    else:
-        raise RuntimeError("invalid time option")
-        
-    footprints_plot_file_path = add_prefix_to_filename(os.path.join(output_offset_dir, plot_file_name), file_prefix)
-    plt.savefig(footprints_plot_file_path, format='png', dpi=300, transparent=True)
-    debug_print(f"saved {footprints_plot_file_path}")
-    plt.close()
-    
-    
-    #TODO this code should be moved to footprint_plots, and if necessary could we add a parameter to footprint plots
-    # this seems to add a new subplot to the original 
-    # that accommodates this (since it is nearly the same code)
-    dbin = np.arange(4.5, 364.5, 4.5) #redefined with 4.5 degree bins.
-
-    # ---------  2.   Second image: 5% footprint only.
-    ax = plt.subplot(111, projection='polar')
-    ax.set_theta_zero_location('N')              # type:ignore  # these methods do work
-    ax.set_theta_direction(-1)                   # type:ignore  # these methods do work
-    theta=np.radians(dbin)
-    ax.grid(True);ax.yaxis.grid(lw=1, ls='--');
-    ax.plot(theta, D[:,0],'r-',lw=2.5)
-    ax.plot([theta[79],theta[79]+theta[79]-theta[78]],[D[79,0],D[0,0]],'r',lw=2.5,label='5%')
-    ax.set_xticks(np.arange(0,2*math.pi,2*math.pi/80))
-    ax.set_xticklabels(['N','','','','','NNE','','','','','NE',
-    '','','','','ENE','','','','','E','','','','','ESE',
-    '','','','','SE','','','','','SSE','','','','','S',
-    '','','','','SSW','','','','','SW','','','','','wind_speedW',
-    '','','','','W','','','','','WNW','','','','','NW',
-    '','','','','NNW','','','',''])
-
-    if(1.1*np.max(D[:,0]) >= 0.5):
-        yl=np.ceil(1.1*np.max(D[:,0]))
-        ax.set_ylim(0,yl)
-        ax.set_yticks(np.linspace(0,yl,num=11))
-        ax.set_yticklabels(np.round(np.linspace(0,yl,num=11),1))
-    else:
-        yl=0.5 # Small setback distance
-        ax.set_ylim(0,yl)
-        ax.set_yticks(np.linspace(0,yl,num=6))
-        ax.set_yticklabels(np.round(np.linspace(0,yl,num=6),1))
-    position=335
-    ax._r_label_position._t = (position, 0)   # type:ignore  # these methods do work
-    ax._r_label_position.invalidate()         # type:ignore  # these methods do work
-    ax.xaxis.set_tick_params(labelsize=14)
-    ax.yaxis.set_tick_params(labelsize=14,labelcolor='black')
-    if(topt == 1):
-        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-    elif(topt == 2):
-        ax.set_title('MI Odor Print - Distance in Miles' + '\n' \
-        + '( Total Odor Emission Factor = ' + str(round(E,1)) + ' )' + '\n', va='bottom')
-    # Shrink current axis by 20%
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height * 0.8]) # type:ignore  # these methods do work
-
-    # Put a legend to the right of the current axis
-    lg=ax.legend(loc='center left', bbox_to_anchor=(1.1, 0.25))
-    lg.draw_frame(False)
-
-    if(topt == 1):
-        plot_file_name = "image_footprint_FY.png"
-    elif(topt == 2):
-        plot_file_name = "image_footprint_wind_speed.png"
-
-    five_percent_plot_file_path = add_prefix_to_filename(os.path.join(output_offset_dir, plot_file_name), file_prefix)
-    plt.savefig(five_percent_plot_file_path, format='png', dpi=300, transparent=True)
-    plt.close()
-
-    debug_print(f"saved {five_percent_plot_file_path}")
-
-    return(footprints_plot_file_path, five_percent_plot_file_path)
 
 
 def setback_text_table(D: np.ndarray)->str:
@@ -322,26 +125,7 @@ def setback_text_table(D: np.ndarray)->str:
     table_text = "\n".join(header_lines + table_lines) + "\n"
     
     return(table_text)
-
-
-def write_setback_text_table(text_file_name: str, table_text: str):# D: np.ndarray):
-    """write text file of set-back distances in tabular form by direction
-
-    Args:
-        text_file_name (str): file name to save the table as
-        D (np.ndarray): array of setback distances
-        
-    Returns:
-        str: file name that was saved
-    """ 
-
-    with open(text_file_name, 'wt') as f_handle:
-        f_handle.write(table_text)
-
-    return(text_file_name)
     
-
-########## MAPPING ###########
 
 def fod_plot_to_ll(D, lat:float, lon:float)->np.ndarray:
     """convert setback distance output from FOD model into a the 
@@ -367,270 +151,8 @@ def fod_plot_to_ll(D, lat:float, lon:float)->np.ndarray:
     LL[80,:,:]=LL[0,:,:]
     
     return(LL)
-    
-    
-def fod_kml(LL, E, lat, lon):
-    """create KML formatted setback polygons for placing on a map
-
-    Args:
-        LL (np.ndarray): shape (81, 3, 2) array from fod_plot_to_ll where
-            axis 0 = direction bins (80 + closing point),
-            axis 1 = footprint level (0=5%, 1=3%, 2=1.5%),
-            axis 2 = [longitude, latitude]
-        E (float): Total Odor Emission Factor
-        lat (float): latitude of the point source
-        lon (float): longitude of the point source
-        
-    Returns:
-        str: XML-formatted KML 
-    """
-    PLACE_MARK = 'http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png' 
-
-    kml = simplekml.Kml()
-    pnt=kml.newpoint(name="", coords=[(lon,lat)])  # Source
-    pnt.name = 'E=' +str(E)
-    pnt.style.iconstyle.color = simplekml.Color.black
-    pnt.style.iconstyle.scale = 1 
-    pnt.style.iconstyle.icon.href = PLACE_MARK
-    pol=kml.newpolygon(name="1.5% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,2,:]))))
-    pol.style.linestyle.color = simplekml.Color.green
-    pol.style.linestyle.width = 10
-    pol.style.polystyle.outline = 1
-    pol.style.polystyle.fill = 0
-    pol.visibility=0
-    pol=kml.newpolygon(name="3% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,1,:]))))
-    pol.style.linestyle.color = simplekml.Color.blue
-    pol.style.linestyle.width = 10
-    pol.style.polystyle.outline = 1
-    pol.style.polystyle.fill = 0
-    pol.visibility=0
-    pol=kml.newpolygon(name="5% footprint",outerboundaryis=list(tuple(map(tuple,LL[:,0,:]))))
-    pol.style.linestyle.color = simplekml.Color.red
-    pol.style.linestyle.width = 10
-    pol.style.polystyle.outline = 1
-    pol.style.polystyle.fill = 0
-    return(kml)
-
-    # string is kml.kml()
-    
-def write_kml(LL, E, lat, lon, kml_file_name):
-    """create kml and save file from LL array 
-
-    Args:
-        LL (np array): set backs in lat/lon
-        latval (float): point source latitude
-        lonval (float): point source longitude
-        kml_file_name (str): full path to kml file to save
-    """
-    
-    kml = fod_kml(LL, E, lat, lon)     
-    kml.save(kml_file_name)  
 
 
-def kml_encode_base64(kml:str|simplekml.Kml, kml_file_name="kml"):
-    """
-    Convert KML content to a URL-safe Base64-encoded dictionary payload 
-    (suitable for incorporation into JSON response)
-    Accepts either a `simplekml.Kml` object or a raw KML XML string, encodes the
-    KML content as UTF-8, then returns a dictionary where the key is the provided
-    file name and the value is the Base64-encoded bytes.
-    Args:
-        kml (str | simplekml.Kml):
-            KML content to encode. Must be either:
-            - a `simplekml.Kml` instance (uses its `.kml()` output), or
-            - a raw KML XML string.
-        kml_file_name (str, optional):
-            Key name to use in the returned dictionary. Defaults to `"kml"`.
-    Returns:
-        dict[str, bytes]:
-            A dictionary containing one entry:
-            `{kml_file_name: <urlsafe_base64_encoded_kml_bytes>}`.
-    Raises:
-        RuntimeError:
-            If `kml` is neither a `simplekml.Kml`-like object (with `.kml()`) nor a string.
-    """
-    if hasattr(kml, 'kml'):
-        kml_xml:str = kml.kml()   # type:ignore  # these methods do work
-    elif isinstance(kml, str):
-        kml_xml:str = kml        
-    else:
-        # don't know what this is
-        raise RuntimeError("kml sent to kml2base64 is not a recognized type (kml or xml str)")
-    kmlb64 = base64.urlsafe_b64encode(kml_xml.encode('utf-8'))
-    kml_dict = {kml_file_name:kmlb64}
-    return kml_dict
-
-
-def kml_decode_base64(kml_dict: dict[str, bytes | str], kml_file_name: str = "kml") -> str:
-    """Decode URL-safe Base64 KML payload back into XML text.
-
-    Args:
-        kml_dict (dict[str, bytes | str]):
-            Dictionary payload containing one encoded KML value.
-        kml_file_name (str, optional):
-            Key name expected in kml_dict. Defaults to "kml".
-
-    Returns:
-        str: Decoded KML XML string.
-
-    Raises:
-        RuntimeError:
-            If the payload is invalid or cannot be decoded as UTF-8 XML.
-    """
-    if not isinstance(kml_dict, dict):
-        raise RuntimeError("kml_decode_base64 expects a dictionary payload")
-
-    if kml_file_name not in kml_dict:
-        raise RuntimeError(f"kml_decode_base64 missing key '{kml_file_name}' in payload")
-
-    kmlb64 = kml_dict[kml_file_name]
-    if isinstance(kmlb64, str):
-        kmlb64_bytes = kmlb64.encode("ascii")
-    elif isinstance(kmlb64, (bytes, bytearray)):
-        kmlb64_bytes = bytes(kmlb64)
-    else:
-        raise RuntimeError("encoded KML value must be bytes or string")
-
-    try:
-        kml_xml_bytes = base64.urlsafe_b64decode(kmlb64_bytes)
-        kml_xml = kml_xml_bytes.decode("utf-8")
-    except Exception as exc:
-        raise RuntimeError("failed to decode Base64 KML payload") from exc
-
-    return kml_xml
-
-
-def fod_geojson(LL: np.ndarray, E: float, lat: float, lon: float) -> dict:
-    """Create a GeoJSON FeatureCollection equivalent to fod_kml.
-
-    Produces a point feature for the odor source and three polygon features
-    for the 5%, 3%, and 1.5% setback footprints.
-
-    Args:
-        LL (np.ndarray): shape (81, 3, 2) array from fod_plot_to_ll where
-            axis 0 = direction bins (80 + closing point),
-            axis 1 = footprint level (0=5%, 1=3%, 2=1.5%),
-            axis 2 = [longitude, latitude]
-        E (float): Total Odor Emission Factor
-        lat (float): latitude of the point source
-        lon (float): longitude of the point source
-
-    Returns:
-        dict: GeoJSON FeatureCollection with four features (but not JSON str):
-              one Point (source) and three Polygons (1.5%, 3%, 5% footprints)
-    """
-    def _ring(level_idx: int) -> list:
-        # LL[d, p, 0] = lon, LL[d, p, 1] = lat — GeoJSON uses [lon, lat]
-        return LL[:, level_idx, :].tolist()
-
-    features = [
-        {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [lon, lat]},
-            "properties": {"name": "Odor source", "odor_emission_factor": E},
-        },
-        {
-            "type": "Feature",
-            "geometry": {"type": "Polygon", "coordinates": [_ring(2)]},
-            "properties": {"name": "1.5% footprint", "level": "1.5%"},
-        },
-        {
-            "type": "Feature",
-            "geometry": {"type": "Polygon", "coordinates": [_ring(1)]},
-            "properties": {"name": "3% footprint", "level": "3%"},
-        },
-        {
-            "type": "Feature",
-            "geometry": {"type": "Polygon", "coordinates": [_ring(0)]},
-            "properties": {"name": "5% footprint", "level": "5%"},
-        },
-    ]
-
-    return {"type": "FeatureCollection", "features": features}
-
-        
-def write_pointsource_shapefile(shapefile_name_stem:str, lonval:float, latval:float)->list[str]:
-    """save single point shape file for mapping point source using pyshp
-    https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
-    
-    SIDE EFFECT: files written to disk
-
-    
-    Args:
-        shapefile_name_stem (str): base file name to use for components of shapefile
-        lonval (float): longitude of point
-        latval (float): latitude of point
-    
-    Returns:
-        list[str]: list of all the actual files that were saved
-    """
-    w = shapefile.Writer(shapefile_name_stem, shapeType=shapefile.POINT)
-    w.point(lonval,latval)
-    w.field('Point')
-    w.record('Odor_source')
-    w.close()
-    return([        
-        f"{shapefile_name_stem}.dbf",
-        f"{shapefile_name_stem}.shp",
-        f"{shapefile_name_stem}.shx",                
-    ])
-
-
-def write_footprint_shapefile(shape_file_name_stem: str, LL: np.ndarray)->list[str]:
-    """Write the footprint polygon shapefile and return list of 
-    filenames created
-
-    SIDE EFFECT: files written to disk
-    
-    Args:
-        shape_file_name_stem (str): the 'stem' of the file, a full path with 
-        a file name and no extension
-        LL (np.ndarray): Lat Lon of footprint ring (usually the 5% one)
-
-    Returns:
-        list[str]: list of all the actual files that were saved
-    """
-
-    # uses pyshp
-    # https://github.com/GeospatialPython/pyshp?tab=readme-ov-file#writing-shapefiles
-        
-    w = shapefile.Writer(shape_file_name_stem, shapeType=shapefile.POLYGON)
-    w.poly([LL[:,0,:].tolist()])
-    w.field('Polygon')
-    w.record('5%_footprint')
-    w.close()
-
-    return [
-        f"{shape_file_name_stem}.dbf",
-        f"{shape_file_name_stem}.shp",
-        f"{shape_file_name_stem}.shx",
-    ]
-
-
-def write_zipfile(zipfile_path: str, zip_files: list[str])->str:
-    """given list of files and zip file path, create and save
-    a zip file.  The items in the zip file have their directory 
-    stripped so unzipping will go directly into the target folder
-    
-    SIDE EFFECT: files written to disk
-
-
-    Args:
-        zipfile_path (str): where to store the zip file
-        zip_files (list[str]): list of full paths to files to include
-    Returns:
-        str: path to zip file saved
-    """
-    shape_zip = zipfile.ZipFile(zipfile_path, 'w')
-
-    tmp_str = []
-    for zfile in zip_files:
-        tmp_str = zfile.rsplit('/',1)
-        tmp_loc_file = tmp_str[1]
-        shape_zip.write(zfile, arcname=tmp_loc_file, compress_type=zipfile.ZIP_DEFLATED)
-
-    shape_zip.close()
-    return(zipfile_path)
 
 
 
@@ -773,17 +295,17 @@ def fod_model(pc: np.ndarray, wind_speed:np.ndarray, wind_direction:np.ndarray, 
     for d in range (0,5*dbin.size):
         for p in range (0,3):
             if (f[d,p] == 1):
-                D[d,p]=0.1181*math.pow(E,0.5132) # Class 1
+                D[d,p]=0.1181*pow(E,0.5132) # Class 1
             elif (f[d,p] == 2):
-                D[d,p]=0.0634*math.pow(E,0.5366) # Class 2
+                D[d,p]=0.0634*pow(E,0.5366) # Class 2
             elif (f[d,p] == 3):
-                D[d,p]=0.0399*math.pow(E,0.5397) # Class 3   
+                D[d,p]=0.0399*pow(E,0.5397) # Class 3   
             elif (f[d,p] == 4):
-                D[d,p]=0.0242*math.pow(E,0.5844) # Class 4   
+                D[d,p]=0.0242*pow(E,0.5844) # Class 4   
             elif (f[d,p] == 5):  
-                D[d,p]=0.0175*math.pow(E,0.5827) # Class 5
+                D[d,p]=0.0175*pow(E,0.5827) # Class 5
             elif (f[d,p] == 6):
-                D[d,p]=0.0101*math.pow(E,0.6264) # Class 6  
+                D[d,p]=0.0101*pow(E,0.6264) # Class 6  
                 
     return(D) 
 
@@ -800,19 +322,3 @@ def fod2dict(D:np.ndarray)->dict[str, list[float]]:
     return {'5percent':D[:,0].tolist(), '3percent':D[:,1].tolist(), '1.5percent':D[:,2].tolist()}
 
 
-def fod2json(D:np.ndarray)->str:
-    """convert output of FOD model from Numpy array to JSON string
-
-    Args:
-        D (np.ndarray): output from fod_model, 80 rows, 2 columns
-
-    Returns:
-        str: JSON string containing the data
-    """
-
-    D_dict = fod2dict(D)
-    D_json = json.dumps(D_dict)
-    
-    return D_json
-
-debug_print("MIOFFSET DEVELOPMENT VERSION - NOT FOR PRODUCTION USE")
