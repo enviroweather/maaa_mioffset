@@ -613,9 +613,13 @@ class WindDataS3(WindData):
     def _validate_path(self)->bool:
         """S3 version of validation for init params"""
         try:
-            check_bucket(self.s3_client, self.bucket)
+            if(check_bucket(self.s3_client, self.bucket)):
+                return(True)
+            else:
+                return(False)
         except Exception as e:
             raise RuntimeError(f"Location is S3 but failed to validate bucket: {e}")
+
 
     def read_dataset_json(self, grid_x:int, grid_y:int, dataset:str)->dict[int, np.ndarray]:
         """read a dataset for all years, S3 edition
