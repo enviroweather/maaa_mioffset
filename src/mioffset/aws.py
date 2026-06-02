@@ -7,14 +7,14 @@ from os import getenv
 import boto3
 from botocore.exceptions import ClientError
 
-import typing as t
 
-# TODO figure out how to get this only for testing
-from types_boto3_s3.client import S3Client
-
-from typing import TYPE_CHECKING
+# to keep it lean, don't import this except for type checking
+# but have to assign it something otherise so the tests pass
+from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from types_boto3_s3.client import S3Client
+else:
+    S3Client = Any
 
 
 def get_aws_config(dotenv_file:str|None = None)->dict[str, str]:
