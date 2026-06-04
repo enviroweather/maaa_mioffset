@@ -66,3 +66,31 @@ def write_setback_text_table(text_file_name: str, table_text: str)->str:
 
     return(text_file_name)
 
+############ dealing with file types
+
+def is_hdf5_file_name(file_name:str)->bool:
+    """is this file named like it might be an hdf5 file?
+
+    Args:
+        file_name (str): string of file name
+    Returns:
+        bool: True if the file name suggests it might be an hdf5 file, False otherwise
+    """
+    
+    extension:str = path.splitext(file_name)[-1]
+    if extension.lower() in ['.h5', 'hdf5', 'hf5']:
+        return True
+    return False
+
+def is_json_file_name(file_name:str)->bool:
+    """is this file named like it might be a JSON file?
+
+    Args:
+        file_name (str): string of file name
+    Returns:
+        bool: True if the file name suggests it might be a JSON file, False otherwise
+    """
+    extension:str = path.splitext(file_name)[-1]
+    if extension.lower() == '.json':
+        return True
+    return False

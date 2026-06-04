@@ -17,8 +17,8 @@ Pure unit tests (always run, no external resources needed):
   - TestWindDataS3ReadTimeseries    — read_narr_timeseries_json (mocked S3)
 
 Integration tests (@pytest.mark.integration):
-  - TestWindDataReadTimeseriesFileIntegration — needs narr_latlon.h5
-  - TestWindDataS3Integration                 — needs narr_latlon.h5 + AWS creds
+    - TestWindDataReadTimeseriesFileIntegration — uses local grid index (.h5/.json)
+    - TestWindDataS3Integration                 — uses local or S3 grid index (.h5/.json) + AWS creds
 
 Run only fast tests:
     pytest -m "not integration"
@@ -41,14 +41,15 @@ from mioffset.narr_data import DATASETS, GridIndex, GridIndexS3, WindData, WindD
 from mioffset.aws import get_aws_config, get_s3_client
 
 # Import shared test utilities from conftest
-from conftest import narr_grid_available, aws_fully_configured
+from conftest import aws_fully_configured
 
 # ---------------------------------------------------------------------------
 # Shared constants
 # ---------------------------------------------------------------------------
 
 TEST_DATA_DIR = str(Path(__file__).parent / "data")
-TEST_NARR_GRID_LATLON = str(Path(TEST_DATA_DIR) / "narr_latlon.h5")
+TEST_NARR_GRID_LATLON_H5 = str(Path(TEST_DATA_DIR) / "narr_latlon.h5")
+TEST_NARR_GRID_LATLON_JSON = str(Path(TEST_DATA_DIR) / "narr_latlon.json")
 
 TEST_MI_LAT = 44.0
 TEST_MI_LON = -83.0
@@ -59,6 +60,32 @@ TEST_GRID_Y = 131
 TEST_YEARS = 30
 TEST_VALUES_PER_YEAR = 2920
 TEST_TOTAL_VALUES = TEST_YEARS * TEST_VALUES_PER_YEAR
+
+
+def _local_grid_index_params():
+    """Return available local GridIndex files to test (.h5 and .json)."""
+    candidates = [
+        ("file-h5", TEST_NARR_GRID_LATLON_H5),
+        ("file-json", TEST_NARR_GRID_LATLON_JSON),
+    ]
+    params = []
+    for case_id, grid_path in candidates:
+        if Path(grid_path).exists():
+            params.append(pytest.param(grid_path, id=case_id))
+    return params
+
+
+def _s3_grid_index_key_params():
+    """Return configured S3 keys to test GridIndexS3 for .h5 and .json."""
+    candidates = [
+        ("s3-h5", os.getenv("NARR_GRID_LATLON_S3", "")),
+        ("s3-json", os.getenv("NARR_GRID_LATLON_JSON_S3", "")),
+    ]
+    params = []
+    for case_id, key in candidates:
+        if key:
+            params.append(pytest.param(key, id=case_id))
+    return params
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +126,28 @@ def wind_data_s3(mock_grid_index):
 
 @pytest.fixture
 def real_grid_index():
-    """GridIndex loaded from the real narr_latlon.h5 test fixture."""
-    return GridIndex(TEST_NARR_GRID_LATLON)
+    """GridIndex loaded from local test fixture (.h5 or .json)."""
+    if not _local_grid_index_params():
+        pytest.skip("No local GridIndex fixtures available")
+
+    # Keep this fixture backward-compatible where tests request one index only.
+    # Prefer HDF5 as the default fixture when both exist.
+    default_path = TEST_NARR_GRID_LATLON_H5 if Path(TEST_NARR_GRID_LATLON_H5).exists() else TEST_NARR_GRID_LATLON_JSON
+    return GridIndex(default_path)
+
+
+@pytest.fixture(params=_local_grid_index_params())
+def real_grid_index_any_format(request):
+    """GridIndex loaded from local test fixture with both supported file formats."""
+    return GridIndex(request.param)
+
+
+@pytest.fixture(params=_s3_grid_index_key_params())
+def real_grid_index_s3_any_format(request):
+    """GridIndexS3 loaded from configured S3 key(s) for .h5 and/or .json."""
+    bucket = os.getenv("NARR_BUCKET", "")
+    s3_client = get_s3_client()
+    return GridIndexS3(request.param, bucket=bucket, s3_client=s3_client)
 
 
 def _s3_body(data: dict):
@@ -145,21 +192,24 @@ class TestWindDataInit:
 class TestGridIndexS3InitValidation:
     """GridIndexS3 init should fail fast when client or bucket validation fails."""
 
-    def test_bad_s3_client_check_raises(self):
+    @pytest.mark.parametrize("grid_key", ["some/s3/key.h5", "some/s3/key.json"])
+    def test_bad_s3_client_check_raises(self, grid_key):
         with patch("mioffset.narr_data.check_s3_client", side_effect=RuntimeError("bad client")):
             with pytest.raises(ValueError, match="S3 client"):
-                GridIndexS3("some/s3/key.h5", bucket="my-bucket", s3_client=MagicMock())
+                GridIndexS3(grid_key, bucket="my-bucket", s3_client=MagicMock())
 
-    def test_no_client_and_bad_env_raises(self):
+    @pytest.mark.parametrize("grid_key", ["some/s3/key.h5", "some/s3/key.json"])
+    def test_no_client_and_bad_env_raises(self, grid_key):
         with patch("mioffset.narr_data.get_s3_client", side_effect=Exception("bad env")):
             with pytest.raises(RuntimeError, match="S3 client initialization failed"):
-                GridIndexS3("some/s3/key.h5", bucket="my-bucket")
+                GridIndexS3(grid_key, bucket="my-bucket")
 
-    def test_bad_bucket_check_raises(self):
+    @pytest.mark.parametrize("grid_key", ["some/s3/key.h5", "some/s3/key.json"])
+    def test_bad_bucket_check_raises(self, grid_key):
         with patch("mioffset.narr_data.check_s3_client", return_value=True):
             with patch("mioffset.narr_data.check_bucket", side_effect=RuntimeError("bad bucket")):
                 with pytest.raises(RuntimeError, match="bucket"):
-                    GridIndexS3("some/s3/key.h5", bucket="my-bucket", s3_client=MagicMock())
+                    GridIndexS3(grid_key, bucket="my-bucket", s3_client=MagicMock())
 
 
 # ---------------------------------------------------------------------------
@@ -507,18 +557,21 @@ class TestWindDataS3ReadTimeseries:
 
 # ---------------------------------------------------------------------------
 # TestWindDataReadTimeseriesFileIntegration
-# (integration — requires narr_latlon.h5 to resolve lat/lon)
+# (integration — requires local narr_latlon index fixture to resolve lat/lon)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-@pytest.mark.skipif(not narr_grid_available(), reason="NARR grid test file not found")
+@pytest.mark.skipif(
+    not (Path(TEST_NARR_GRID_LATLON_H5).exists() or Path(TEST_NARR_GRID_LATLON_JSON).exists()),
+    reason="No local NARR grid test file (.h5/.json) found",
+)
 class TestWindDataReadTimeseriesFileIntegration:
-    """Integration tests that use the real narr_latlon.h5 to convert lat/lon to
+    """Integration tests that use a real local grid index file to convert lat/lon to
     grid indices, then read from the JSON test fixtures in tests/data/."""
 
     @pytest.fixture
-    def wind_data(self, real_grid_index):
-        return WindData(real_grid_index, narr_data_dir=TEST_DATA_DIR)
+    def wind_data(self, real_grid_index_any_format):
+        return WindData(real_grid_index_any_format, narr_data_dir=TEST_DATA_DIR)
 
     def test_returns_all_datasets(self, wind_data):
         result = wind_data.read_narr_timeseries_json(TEST_MI_LAT, TEST_MI_LON)
@@ -548,7 +601,7 @@ class TestWindDataReadTimeseriesFileIntegration:
 
 # ---------------------------------------------------------------------------
 # TestWindDataS3Integration
-# (integration — requires narr_latlon.h5 + valid AWS credentials + NARR_BUCKET)
+# (integration — requires valid AWS credentials + NARR_BUCKET)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
@@ -557,7 +610,6 @@ class TestWindDataReadTimeseriesFileIntegration:
     not aws_fully_configured(),
     reason="Valid AWS credentials (.env) and NARR_BUCKET are required",
 )
-@pytest.mark.skipif(not narr_grid_available(), reason="NARR grid test file not found")
 class TestWindDataS3Integration:
     """End-to-end tests against the real S3 bucket using credentials from .env.
 
@@ -566,10 +618,32 @@ class TestWindDataS3Integration:
     NARR_BUCKET is unset.
     """
 
-    @pytest.fixture(scope="class")
-    def wind_data_real_s3(self):
-        """WindDataS3 wired to the live S3 bucket; GridIndex from real lat/lon file."""
-        gi = GridIndex(TEST_NARR_GRID_LATLON)
+    @pytest.fixture(scope="class", params=["file-h5", "file-json", "s3-h5", "s3-json"])
+    def wind_data_real_s3(self, request):
+        """WindDataS3 wired to live S3; GridIndex from local or S3 index file."""
+        grid_mode = request.param
+
+        if grid_mode == "file-h5":
+            if not Path(TEST_NARR_GRID_LATLON_H5).exists():
+                pytest.skip("Local .h5 grid fixture not found")
+            gi = GridIndex(TEST_NARR_GRID_LATLON_H5)
+        elif grid_mode == "file-json":
+            if not Path(TEST_NARR_GRID_LATLON_JSON).exists():
+                pytest.skip("Local .json grid fixture not found")
+            gi = GridIndex(TEST_NARR_GRID_LATLON_JSON)
+        elif grid_mode == "s3-h5":
+            s3_key = os.getenv("NARR_GRID_LATLON_S3", "")
+            if not s3_key:
+                pytest.skip("NARR_GRID_LATLON_S3 is not configured")
+            gi = GridIndexS3(s3_key, bucket=os.getenv("NARR_BUCKET", ""), s3_client=get_s3_client())
+        elif grid_mode == "s3-json":
+            s3_key = os.getenv("NARR_GRID_LATLON_JSON_S3", "")
+            if not s3_key:
+                pytest.skip("NARR_GRID_LATLON_JSON_S3 is not configured")
+            gi = GridIndexS3(s3_key, bucket=os.getenv("NARR_BUCKET", ""), s3_client=get_s3_client())
+        else:
+            pytest.fail(f"Unknown grid mode: {grid_mode}")
+
         bucket = os.getenv("NARR_BUCKET", "")
         return WindDataS3(gi, bucket=bucket, narr_data_dir=TEST_DATA_DIR)
 
@@ -671,11 +745,11 @@ class TestWindDataFactoryS3Integration:
     are available via environment/.env.
     """
 
-    @pytest.fixture(scope="class")
-    def s3_grid_key(self):
-        key = os.getenv("NARR_GRID_LATLON_S3", "")
+    @pytest.fixture(scope="class", params=_s3_grid_index_key_params())
+    def s3_grid_key(self, request):
+        key = request.param
         if not key:
-            pytest.skip("NARR_GRID_LATLON_S3 is required for S3 factory integration tests")
+            pytest.skip("S3 grid key is not configured")
         return key
 
     @pytest.fixture(scope="class")

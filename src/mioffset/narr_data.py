@@ -24,25 +24,17 @@ Expected environment variables (set via .env / dotenv):
 """
 
 from logging import warning
-from dotenv import load_dotenv
-import numpy as np
-import h5py
-import os, json
+from numpy import array, dtype, ndarray, where, concatenate
+from numpy import min as np_min
+from numpy import max as np_max 
 
-# TODO FIGURE OUT HOW TO GET TESTS TO PASS DURING TESTING AND TYPING ONLY
+# import h5py
+import json
+from os import path, getenv,makedirs
 
-from types_boto3_s3.client import S3Client
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    # when doing it this way the pytest tests fail
-    from types_boto3_s3.client import S3Client
-
-from mioffset.awsh5 import read_hdf5_from_s3
-from mioffset.aws import check_s3_client, get_s3_client, check_bucket
+from mioffset.aws import check_s3_client, get_s3_client, check_bucket, S3Client
+from mioffset.mioffset_utils import is_hdf5_file_name, is_json_file_name
 from botocore.exceptions import ClientError
-
-
 
 
 # the original HDF5 files each had 3 datasets or types of date
@@ -69,7 +61,7 @@ class GridIndex():
     """class for reading grid x,y converter file from file
     
     typical Usage for local file in this package:   
-        grid_file = os.getenv('NARR_GRID_LATLON', "data/narr_latlon.h5")
+        grid_file = getenv('NARR_GRID_LATLON', "data/narr_latlon.h5")
         grid_index = GridIndex( "narr_latlon.h5") 
         try:
             idx, idy = grid_index(lat, lon)
@@ -78,11 +70,10 @@ class GridIndex():
 
         # ... use idx,idy in model
         
-    
     """
     
     location = "FILE"
-    
+
     def __init__(self, narr_grid_file: str):
         """class for reading the grid file for wind data
 
@@ -93,35 +84,31 @@ class GridIndex():
 
         
         self.narr_grid_file = narr_grid_file  # this is a key for s3
-        self._LAT: np.ndarray | None = None
-        self._LON: np.ndarray | None = None
-        self._load_error: str = "Error occurred while loading grid file using location {self.location} and narr_grid_file {self.narr_grid_file}: {e}"
-          
+        self._LAT: ndarray = array(0)
+        self._LON: ndarray = array(0)
+        self._load_error: str = (
+            f"Error occurred while loading grid file using location {self.location} "
+            f"and narr_grid_file {self.narr_grid_file}: {{e}}"
+        )
         # try to load the lat/lon data structures for conversion
         self._load_grid_file()
-
-
-    # this doesn't smell right 
-    def assign_grid_reader(self):
-        """assign the appropriate grid reader method based on the location for this class/subclass"""
-        self._grid_reader = self._read_narr_grid_file_hdf5
-
         
     @property
-    def LAT(self) -> np.ndarray | None:
+    def LAT(self) -> ndarray | None:
         """Latitude grid array, or None if not yet loaded."""
         return self._LAT
 
     @property
-    def LON(self) -> np.ndarray | None:
+    def LON(self) -> ndarray | None:
         """Longitude grid array, or None if not yet loaded."""
         return self._LON
 
     @property
     def is_loaded(self) -> bool:
         """True if lat/lon grid arrays have been successfully loaded."""
-        return self._LAT is not None and self._LON is not None
-
+        return (self._LAT is not None and self._LON is not None) and \
+            (self._LAT.shape !=() and self._LON.shape != () )
+            
     def _check_loaded(self) -> None:
         """Raise RuntimeError if the lat/lon grid data has not been loaded."""
         if not self.is_loaded:
@@ -133,28 +120,51 @@ class GridIndex():
             )
 
     def _load_grid_file(self):
+        file_type = path.splitext(self.narr_grid_file)[-1]
         try:
-            return self._read_narr_grid_file_hdf5() # self._grid_reader()
+            if is_hdf5_file_name(self.narr_grid_file):
+                return self._read_narr_grid_file_hdf5()
+            elif is_json_file_name(self.narr_grid_file):
+                return self._read_narr_grid_file_json()
+            else:
+                raise ValueError("Unsupported file type. Filenames must end with .h5 or .json")
         except Exception as e:            
             raise RuntimeError(self._load_error.format(e=e))
-                
-    def _read_narr_grid_file_hdf5(self):
+         
+    
+    def _read_narr_grid_file_json(self):
+        """_summary_
+        """
+        
+        if not path.exists(self.narr_grid_file):
+            raise RuntimeError("NARR grid file not found.")        
+
+        with open(self.narr_grid_file, "r") as f:
+            grid_data = json.load(f)
+        self._LAT = array(grid_data['LAT'])
+        self._LON = array(grid_data['LON'])
+        return (self._LAT, self._LON) 
+     
+    def _read_narr_grid_file_hdf5(self)->tuple[ndarray]:
         """
         Read the NARR grid file and extract latitude and longitude arrays.
         
         Returns:
             tuple: A tuple containing the latitude and longitude arrays.
         """
-        if not os.path.exists(self.narr_grid_file):
+        
+        import h5py
+
+        if not path.exists(self.narr_grid_file):
             raise RuntimeError("NARR grid file not found.")        
 
         with h5py.File(self.narr_grid_file, 'r') as hf:
             data = hf.get('LAT')
-            self._LAT = np.array(data)
+            self._LAT:ndarray = array(data)
             data = hf.get('LON')
-            self._LON = np.array(data)
+            self._LON:ndarray = array(data)
 
-        return (self._LAT, self._LON)  
+        return (self._LAT, self._LON)    #type:ignore
                 
     def validate_latlon(self, latval: float, lonval: float) -> bool:
         """determine latitude, longitude params are withing boundary
@@ -162,12 +172,12 @@ class GridIndex():
         Args:
             latval (float): latitude value
             lonval (float): longitude value 
-            LAT (np.ndarray): latitude grid
-            LON (np.ndarray): longitude grid
+            LAT (ndarray): latitude grid
+            LON (ndarray): longitude grid
         """
         self._check_loaded()
 
-        if((latval <np.min(np.min(self.LAT))) or ( latval > np.max(np.max(self.LAT))) or (lonval < np.min(np.min(self.LON))) or (lonval > np.max(np.max(self.LON)))):  #type:ignore
+        if((latval <np_min(np_min(self.LAT))) or ( latval > np_max(np_max(self.LAT))) or (lonval < np_min(np_min(self.LON))) or (lonval > np_max(np_max(self.LON)))):  #type:ignore
             return(False)
         
         return(True)
@@ -194,10 +204,10 @@ class GridIndex():
             raise ValueError("Location outside the Michigan.")            
 
         # get grid index point for closest grid point using simplified euclidean dist
-        distance:np.ndarray = (self.LAT-latval)**2 + (self.LON-lonval)**2   # type:ignore
+        distance:ndarray = (self.LAT-latval)**2 + (self.LON-lonval)**2   # type:ignore
         # if input lat and/or lon are equidistant from grid point, this defaults
         # to the most SW corner (I think )
-        idy_array, idx_array = np.where(distance==distance.min()) # tuple of arrays
+        idy_array, idx_array = where(distance==distance.min()) # tuple of arrays
         idy:int=int(idy_array[0]) 
         idx:int=int(idx_array[0]) 
 
@@ -214,8 +224,8 @@ class GridIndexS3(GridIndex):
     
     typical use for S3 file: 
 
-        grid_key = os.getenv("NARR_GRID_LATLON_S3")
-        bucket=os.getenv("NARR_BUCKET")
+        grid_key = getenv("NARR_GRID_LATLON_S3")
+        bucket=getenv("NARR_BUCKET")
         s3_client = get_s3_client()
         grid_index = GridIndex( narr_grid_file = grid_key, bucket=bucket, s3_client = s3_client )
         try:
@@ -258,12 +268,13 @@ class GridIndexS3(GridIndex):
         super().__init__(narr_grid_file)
         
         # class customization: set the method that actually reads the file
-        self._grid_reader = self._read_narr_grid_file_s3
+        # self._grid_reader = self._read_narr_grid_file_s3
         
         # override location
         self.location = "S3"
-        
-    def _read_narr_grid_file_s3(self)->tuple[np.ndarray, np.ndarray]:
+
+            
+    def _read_narr_grid_file_hdf5(self):   #type:ignore
         """
         read in lat,lon for converting lat lon to climatology grid indices
         
@@ -274,25 +285,62 @@ class GridIndexS3(GridIndex):
         # defensive - check the bucket every time to let user know it's a bucket issue not file issue
         if not check_bucket(s3_client = self.s3_client, bucket_name= self.bucket):
             raise  RuntimeError(f"S3 bucket {self.bucket} invalid or not found")
-        
+
+        from mioffset.awsh5 import read_hdf5_from_s3
         try:
             # read_hdf5_from_s3 is a generator that yields the open h5py.File
             # and cleans up the temp file in its finally block,which is why we are using a loop
             for hf5 in read_hdf5_from_s3(self.s3_client, bucket=self.bucket, filename=self.narr_grid_file):
-                self._LAT = np.array(hf5.get('LAT'))  # type: ignore
-                self._LON = np.array(hf5.get('LON'))  # type: ignore
+                self._LAT = array(hf5.get('LAT'))  # type: ignore
+                self._LON = array(hf5.get('LON'))  # type: ignore
             
         except Exception as e:
             raise RuntimeError(f"could not get H5 file from S3 {self.narr_grid_file}: {e}")
         
         return(self.LAT, self.LON) # type: ignore
     
+    def _read_narr_grid_file_json(self):   #type:ignore
+        """
+        read in lat,lon for converting lat lon to climatology grid indices
         
-    def _load_grid_file(self):
+        Returns:
+            tuple[float]: A tuple containing the latitude and longitude arrays.
+        """
+
+        # defensive - check the bucket every time to let user know it's a bucket issue not file issue
+        if not check_bucket(s3_client = self.s3_client, bucket_name= self.bucket):
+            raise  RuntimeError(f"S3 bucket {self.bucket} invalid or not found")
+    
         try:
-            return self._read_narr_grid_file_s3() # self._grid_reader()
-        except Exception as e:            
-            raise RuntimeError(self._load_error.format(e=e))
+            response = self.s3_client.get_object(Bucket=self.bucket, Key=self.narr_grid_file)
+            grid_file = response['Body'].read()
+            grid_data:dict[str, list[list[float]]] = json.loads(grid_file)
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']   # type:ignore   
+            if error_code in ('NoSuchBucket', 'InvalidBucketName'):
+                raise ValueError(
+                    f"S3 bucket '{self.bucket}' not found or invalid. "
+                    f"Check NARR_BUCKET configuration."
+                )
+            elif error_code in ('InvalidClientTokenId', 'AuthFailure',
+                                'SignatureDoesNotMatch', 'AccessDenied',
+                                'InvalidAccessKeyId'):
+                raise ValueError(
+                    f"AWS credentials are invalid for bucket '{self.bucket}'. "
+                    f"Check AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
+                )
+            else:
+                # Data not found (NoSuchKey, etc.) — not a config error, return empty
+                print(f"Error occurred while fetching {self.narr_grid_file} from S3 bucket {self.bucket}: {e}")
+                return {}
+        except Exception as e:
+            print(f"Error occurred while fetching {self.narr_grid_file} from S3 bucket {self.bucket}: {e}")
+            return {}
+        
+        self._LAT: ndarray = array(grid_data['LAT'])
+        self._LON: ndarray   = array(grid_data['LON']) 
+        return(self.LAT, self.LON)
 
 ##################################
 
@@ -305,9 +353,9 @@ class WindData():
     
     
     sample Usage JSON, File:
-    grid_file = os.getenv('NARR_GRID_LATLON', "data/narr_latlon.h5")
+    grid_file = getenv('NARR_GRID_LATLON', "data/narr_latlon.h5")
     grid_index = GridIndex( "narr_latlon.h5") 
-    narr_data_dir = os.getenv('NARR_DATA_DIR', "data")
+    narr_data_dir = getenv('NARR_DATA_DIR', "data")
     wind_data = WindData(grid_index, location="FILE", narr_data_dir=narr_data_dir)
     narr_data = wind_data.read_narr_timeseries_json(latval=-83.0, lonval=44.0)
     # send narr_data to FOD model
@@ -342,11 +390,12 @@ class WindData():
         
         Override this method for other file access sub-classes
         """
-        if not os.path.exists(self.narr_data_dir):
+        if not path.exists(self.narr_data_dir):
             raise ValueError(f"Location is FILE but {self.narr_data_dir} is not found")
         return True
 
     ############### JSON METHODS ##################
+    
     def narr_data_json_filename(self, dataset:str, x:int,y:int )->str:
         """
         helper function for standard naming of the JSON formatted narr file 
@@ -364,7 +413,7 @@ class WindData():
         one_coord_filename=f"{dataset.lower()}/{dataset.lower()}_{x:03}_{y:03}.json"
         return(one_coord_filename)
 
-    def read_dataset_json(self,grid_x:int, grid_y:int, dataset:str)->dict[int, np.ndarray]:
+    def read_dataset_json(self,grid_x:int, grid_y:int, dataset:str)->dict[int, ndarray]:
         """read a dataset for all years for one coordinate from a JSON file
 
         Args
@@ -378,7 +427,7 @@ class WindData():
 
         ts_by_year_file = self.narr_data_json_filename(dataset, grid_x, grid_y) 
         try:
-            with open(os.path.join(self.narr_data_dir, ts_by_year_file), 'r') as f:
+            with open(path.join(self.narr_data_dir, ts_by_year_file), 'r') as f:
                 ts_by_year = json.load(f)
         except Exception as e:
             print(f"Error occurred while fetching {ts_by_year_file}: {e}")
@@ -438,7 +487,7 @@ class WindData():
             return narr_timeseries
 
     
-    def prep_dataset_for_fod(self,ts_by_year: dict[int, float])->np.ndarray:
+    def prep_dataset_for_fod(self,ts_by_year: dict[int, float])->ndarray:
         """convert dictionary of timeseries by year (for one data set) into single
         np array with them all smashed together
 
@@ -446,9 +495,9 @@ class WindData():
             ts_by_year (dict[int, float]): dictionary of time series keyed by year as returned from read_narr_timeseries_json
 
         Returns:
-            np.ndarray: time series of floats in a single array,expected by FOD
+            ndarray: time series of floats in a single array,expected by FOD
         """
-        ts_by_year_merged = np.concatenate(list(ts_by_year.values()))
+        ts_by_year_merged = concatenate(list(ts_by_year.values()))
         return ts_by_year_merged
 
     ############### hdf5 METHODS ##################
@@ -468,7 +517,7 @@ class WindData():
         """
 
         narr_file_name = f"narr_PSD_{yr}_BC.h5"
-        h5f_annual_filename = os.path.join(self.narr_data_dir, narr_file_name)
+        h5f_annual_filename = path.join(self.narr_data_dir, narr_file_name)
         return(h5f_annual_filename)
 
     # read one year WHOLE grid
@@ -490,7 +539,7 @@ class WindData():
 
     # called before and inside the loop by years
     # this returns one grid coordinate
-    def read_one_year_h5(self,yr:int|str,idy: int, idx: int)->dict[str, np.ndarray]:
+    def read_one_year_h5(self,yr:int|str,idy: int, idx: int)->dict[str, ndarray]:
         """read one year hf5 file, extra 3 datasets and filter just one coordinate
         Files must be named like narr_PSD_1980_BC.h5
         
@@ -499,7 +548,7 @@ class WindData():
             idy (int): index of grid y coordinate (North/South)
             idx (int): index of grid x coordinate (East/West)
         Returns:
-            dict[str, np.ndarray]: timeseries values for PC, WD and WS from one grid point, all hours
+            dict[str, ndarray]: timeseries values for PC, WD and WS from one grid point, all hours
         """
         
         h5f_annual_filename = self.path_to_h5_narrfile(yr) 
@@ -509,15 +558,15 @@ class WindData():
         # previously filtered at read time, like
         #  pc_1year = h5f['pc'][idy,idx,ts:te]
         
-        ts:dict[str, np.ndarray]= {}
-        ts['pc'] = np.array(h5f['PC'][idy,idx,:])   #type:ignore
-        ts['ws'] = np.array(h5f['WS'][idy,idx,:])   #type:ignore
-        ts['wd'] = np.array(h5f['WD'][idy,idx,:])   #type:ignore
+        ts:dict[str, ndarray]= {}
+        ts['pc'] = array(h5f['PC'][idy,idx,:])   #type:ignore
+        ts['ws'] = array(h5f['WS'][idy,idx,:])   #type:ignore
+        ts['wd'] = array(h5f['WD'][idy,idx,:])   #type:ignore
 
         h5f.close()
         return ts
 
-    def read_narr_timeseries_h5(self, latval: float, lonval: float)->dict[str, np.ndarray]:
+    def read_narr_timeseries_h5(self, latval: float, lonval: float)->dict[str, ndarray]:
         """read in wind data for all available years  from HDF5 files
 
         Args:
@@ -525,7 +574,7 @@ class WindData():
             lonval (float): longitude value in decimal degrees (CRS unknown)
             
         Returns: 
-            dict[str, np.ndarray]: dictionary of numpy arrays keyed by dataset
+            dict[str, ndarray]: dictionary of numpy arrays keyed by dataset
 
         """
 
@@ -546,14 +595,14 @@ class WindData():
             # note on py2 to 3 conversion: 
             # it was axis=1 in original script but that doesn't work on 1-d arrays
             # axis=0 combines row-wise for 1-d array, which following code uses
-            narr_ts['pc']:np.ndarray = np.concatenate((narr_ts['pc'],ts_1year['pc']),axis=0) #type:ignore    
-            narr_ts['ws']:np.ndarray = np.concatenate((narr_ts['ws'],ts_1year['ws']),axis=0) #type:ignore
-            narr_ts['wd']:np.ndarray = np.concatenate((narr_ts['wd'],ts_1year['wd']),axis=0) #type:ignore
+            narr_ts['pc']:ndarray = concatenate((narr_ts['pc'],ts_1year['pc']),axis=0) #type:ignore    
+            narr_ts['ws']:ndarray = concatenate((narr_ts['ws'],ts_1year['ws']),axis=0) #type:ignore
+            narr_ts['wd']:ndarray = concatenate((narr_ts['wd'],ts_1year['wd']),axis=0) #type:ignore
                     
         return(narr_ts) 
 
 
-def filter_narr_timeseries(ts:dict[str, np.ndarray], tstart:int=0, tend:int=2920)->dict[str, np.ndarray]:
+def filter_narr_timeseries(ts:dict[str, ndarray], tstart:int=0, tend:int=2920)->dict[str, ndarray]:
     """simple method filter NARR timeseries data, limit the timeseries the same
     way for each key ()
 
@@ -621,7 +670,7 @@ class WindDataS3(WindData):
             raise RuntimeError(f"Location is S3 but failed to validate bucket: {e}")
 
 
-    def read_dataset_json(self, grid_x:int, grid_y:int, dataset:str)->dict[int, np.ndarray]:
+    def read_dataset_json(self, grid_x:int, grid_y:int, dataset:str)->dict[int, ndarray]:
         """read a dataset for all years, S3 edition
         one coordinate from a JSON file
 
@@ -670,7 +719,7 @@ class WindDataS3(WindData):
         
         return ts_by_year
    
-    def read_one_year_h5(self,yr:int|str,idy: int, idx: int)-> dict[str, np.ndarray]:
+    def read_one_year_h5(self,yr:int|str,idy: int, idx: int)-> dict[str, ndarray]:
         """read one year hf5 file, S3 EDITION
         extra 3 datasets and filter just one coordinate
         Files must be named like narr_PSD_1980_BC.h5
@@ -681,18 +730,18 @@ class WindDataS3(WindData):
             idx (int): index of grid x coordinate (East/West)
             narr_data_dir (str): path to NARR input files
         Returns:
-             dict[str, np.ndarray]: timeseries values for PC, WD and WS from one grid point, all hours
+             dict[str, ndarray]: timeseries values for PC, WD and WS from one grid point, all hours
         """
         # this is the same for files or for S3
         # for S3, uses the "path" inside the bucket
         h5f_annual_filename = self.path_to_h5_narrfile(yr) 
-        ts:dict[str, np.ndarray]= {}
+        ts:dict[str, ndarray]= {}
         # using for loop here to work with generator function
         # but there is only on file, which is closed by generator
         for h5f in read_hdf5_from_s3(self.s3_client, self.bucket, h5f_annual_filename):
-            ts['pc'] = np.array(h5f['PC'][idy,idx,:])   #type:ignore
-            ts['ws'] = np.array(h5f['WS'][idy,idx,:])   #type:ignore
-            ts['wd'] = np.array(h5f['WD'][idy,idx,:])   #type:ignore
+            ts['pc'] = array(h5f['PC'][idy,idx,:])   #type:ignore
+            ts['ws'] = array(h5f['WS'][idy,idx,:])   #type:ignore
+            ts['wd'] = array(h5f['WD'][idy,idx,:])   #type:ignore
 
         return ts    
 
@@ -751,7 +800,7 @@ def wind_data_factory(location = "S3",
     return(wind_data)
 
 ##################################
-# TEMPORARY FUNCTIONS TO CONVERT DATA
+# UTILITY FUNCTIONS TO CONVERT DATA
 
 
 def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:str, narr_data_dir:str, local_filefolder:str)->dict[str, str]:
@@ -778,8 +827,8 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
     
     for dataset in wind_data._datasets:
         ts_filename =  wind_data.narr_data_json_filename(dataset, grid_x, grid_y)
-        local_file_path = os.path.join(local_filefolder, ts_filename)
-        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        local_file_path = path.join(local_filefolder, ts_filename)
+        makedirs(path.dirname(local_file_path), exist_ok=True)
         with open(local_file_path, "w") as f:
             json.dump(narr_timeseries[dataset], f)
             files_written[dataset] = local_file_path
@@ -789,7 +838,36 @@ def save_narr_timeseries_s3_to_local(latval: float, lonval: float, narr_bucket:s
 def save_narr_timeseries_test_data(TEST_MI_LAT = 44.0, TEST_MI_LON = -83.0, save_folder = "tests/data"):
     from dotenv import load_dotenv
     load_dotenv()
-    narr_bucket = os.getenv("NARR_BUCKET", "")
-    narr_grid_latlon = os.getenv("NARR_GRID_LATLON", "")
+    narr_bucket = getenv("NARR_BUCKET", "")
+    narr_grid_latlon = getenv("NARR_GRID_LATLON", "")
     files_saved = save_narr_timeseries_s3_to_local(TEST_MI_LAT, TEST_MI_LON, narr_bucket, narr_grid_latlon, save_folder )
     return files_saved
+
+
+def grid_hd5f_to_json(grid_index: GridIndex)->str:
+    """
+    convert grid data from HDF5 file to JSON.  Used to remove the dependency
+    on the h5py library 
+    Use the grid index classes to re-use the hd5f reading functions
+    """
+ 
+    lat_list = array(grid_index._LAT).tolist()
+    lon_list = array(grid_index._LON).tolist()
+    grid_dict = {"LAT": lat_list, "LON": lon_list}
+    grid_json = json.dumps(grid_dict)
+    return(grid_json)
+
+
+def save_grid_hd5f_to_json(narr_grid_file:str, output_file: str):
+    """ data workflow to convert grid data from HDF5 to JSON from a local file
+
+    Used to remove the dependency on the h5py library 
+    """
+
+    grid_index = GridIndex(narr_grid_file= narr_grid_file) 
+    grid_json:str = grid_hd5f_to_json(grid_index)
+    
+    # save the file
+    with open(output_file, 'w') as f:
+        f.writelines(grid_json)
+       
