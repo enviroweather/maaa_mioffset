@@ -2,7 +2,13 @@
 
 **A tool for evaluating odor setback distance to minimize odor nuisance complaints.**
 
-## *DEVELOPMENT AND TESTING VERSION 2026* 
+## *DEVELOPMENT AND TESTING VERSION 2026 - NO LONGER USED*
+
+This is a python3 version based from original Python2/2018 version by M. Keifer (see below).  The goal was to replicate the results of Python2/2018 version but with currently supported versions of python, better code organization, testing and to be deployed as a cloud function (e.g. AWS Lambda) that could be called by a new web application. 
+
+However, this version has since been re-implemented in Javascript directly in the web application and is no longer needed.  Please see our MI-OFFSET-2026-FRONT-END project (which is much more than a 'front end') for the latest version that we will be publishing and used by MDARD
+
+## background
 
 Developed in cooperation with and sponsored by 
 
@@ -10,6 +16,7 @@ Developed in cooperation with and sponsored by
 - [Michigan Department of Agriculture and Rural Development (MDARD)](http://www.michigan.gov/mdard/)
 
 ![Circular odor footprint chart on a black background showing many white radial grid lines, a small gray center with irregular red and blue contour lines, and a larger green contour arc extending outward, illustrating modeled setback distances by wind direction.](doc/example_mioffset_plot.png)
+
 
 MI OFFSET is a planning tool for assessing potential odor impacts from livestock facilities. 
 output from this tool, called an odor footprint, is a radial plot which represents approximate distances 
